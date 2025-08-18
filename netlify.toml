@@ -1,156 +1,23 @@
+# netlify.toml
+
 [build]
-  # Build command - Simple and reliable
-  command = "npm install && npm run build"
-  
-  # Publish directory
-  publish = "dist"
-  
-  # Base directory (if your project is in a subdirectory)
-  # base = ""
+  command = "npm run build"
+  publish = "dist" # or "build" depending on your framework (React = build, Vue = dist)
 
-[build.environment]
-  # Node version
-  NODE_VERSION = "18"
-  
-  # Build environment variables
-  NODE_ENV = "production"
-
-# Redirects and rewrites - Optimized for existing admin system
-[[redirects]]
-  from = "/admin"
-  to = "/admin/login"
-  status = 302
-
-[[redirects]]
-  from = "/admin/login"
-  to = "/admin/login"
-  status = 200
-
-# Admin management pages
-[[redirects]]
-  from = "/admin/dashboard"
-  to = "/admin/dashboard"
-  status = 200
-
-[[redirects]]
-  from = "/admin/users"
-  to = "/admin/users"
-  status = 200
-
-[[redirects]]
-  from = "/admin/tasks"
-  to = "/admin/tasks"
-  status = 200
-
-[[redirects]]
-  from = "/admin/withdrawals"
-  to = "/admin/withdrawals"
-  status = 200
-
-[[redirects]]
-  from = "/admin/referrals"
-  to = "/admin/referrals"
-  status = 200
-
-[[redirects]]
-  from = "/admin/settings"
-  to = "/admin/settings"
-  status = 200
-
-[[redirects]]
-  from = "/admin/trading-referrals"
-  to = "/admin/trading-referrals"
-  status = 200
-
-# User routes
-[[redirects]]
-  from = "/wallet"
-  to = "/wallet"
-  status = 200
-
-[[redirects]]
-  from = "/tasks"
-  to = "/tasks"
-  status = 200
-
-[[redirects]]
-  from = "/referrals"
-  to = "/referrals"
-  status = 200
-
-[[redirects]]
-  from = "/earnings"
-  to = "/earnings"
-  status = 200
-
-[[redirects]]
-  from = "/leaderboard"
-  to = "/leaderboard"
-  status = 200
-
-# API routes
-[[redirects]]
-  from = "/api/*"
-  to = "/api/:splat"
-  status = 200
-
-# SPA fallback
+# Redirects (example: SPA support like React Router)
 [[redirects]]
   from = "/*"
   to = "/index.html"
   status = 200
 
-# Headers for security
+# Environment variables (optional)
+[build.environment]
+  NODE_ENV = "production"
+
+# Headers (optional - for caching, CORS, security)
 [[headers]]
   for = "/*"
-  [headers.values]
+    [headers.values]
     X-Frame-Options = "DENY"
-    X-XSS-Protection = "1; mode=block"
     X-Content-Type-Options = "nosniff"
     Referrer-Policy = "strict-origin-when-cross-origin"
-    Permissions-Policy = "camera=(), microphone=(), geolocation=()"
-    Content-Security-Policy = "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://telegram.org https://api.telegram.org; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https://*.supabase.co https://api.telegram.org; frame-src https://telegram.org;"
-
-# Admin-specific headers
-[[headers]]
-  for = "/admin/*"
-  [headers.values]
-    X-Frame-Options = "DENY"
-    X-XSS-Protection = "1; mode=block"
-    X-Content-Type-Options = "nosniff"
-    Referrer-Policy = "strict-origin-when-cross-origin"
-    Cache-Control = "no-cache, no-store, must-revalidate"
-    Pragma = "no-cache"
-    Expires = "0"
-
-# Static assets caching
-[[headers]]
-  for = "/assets/*"
-  [headers.values]
-    Cache-Control = "public, max-age=31536000, immutable"
-
-# Service worker
-[[headers]]
-  for = "/sw.js"
-  [headers.values]
-    Cache-Control = "no-cache"
-    Service-Worker-Allowed = "/"
-
-# Environment variables for different contexts
-[context.production.environment]
-  NODE_ENV = "production"
-  VITE_APP_ENV = "production"
-
-[context.deploy-preview.environment]
-  NODE_ENV = "preview"
-  VITE_APP_ENV = "preview"
-
-[context.branch-deploy.environment]
-  NODE_VERSION = "18"
-  NODE_ENV = "branch"
-  VITE_APP_ENV = "branch"
-
-# Functions (if you want to add serverless functions later)
-[functions]
-  directory = "netlify/functions"
-  node_bundler = "esbuild" 
