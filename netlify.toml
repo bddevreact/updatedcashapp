@@ -1,23 +1,8 @@
-# netlify.toml
-
 [build]
   command = "npm run build"
-  publish = "dist" # or "build" depending on your framework (React = build, Vue = dist)
+  publish = "dist"
 
-# Redirects (example: SPA support like React Router)
-[[redirects]]
-  from = "/*"
-  to = "/index.html"
-  status = 200
-
-# Environment variables (optional)
 [build.environment]
+  NODE_VERSION = "18"
   NODE_ENV = "production"
-
-# Headers (optional - for caching, CORS, security)
-[[headers]]
-  for = "/*"
-    [headers.values]
-    X-Frame-Options = "DENY"
-    X-Content-Type-Options = "nosniff"
-    Referrer-Policy = "strict-origin-when-cross-origin"
+  NPM_FLAGS = "--include=dev"
