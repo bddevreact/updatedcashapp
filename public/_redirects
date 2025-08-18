@@ -1,1 +1,36 @@
+# Admin Route Protection and Redirects
+# This file handles routing for the BT Community app
+
+# Admin Routes - More flexible routing for existing admin system
+/admin /admin/login 302
+/admin/login /admin/login 200
+
+# Admin dashboard and management pages
+/admin/dashboard /admin/dashboard 200
+/admin/users /admin/users 200
+/admin/tasks /admin/tasks 200
+/admin/withdrawals /admin/withdrawals 200
+/admin/referrals /admin/referrals 200
+/admin/settings /admin/settings 200
+/admin/trading-referrals /admin/trading-referrals 200
+
+# User Routes
+/wallet /wallet 200
+/tasks /tasks 200
+/referrals /referrals 200
+/earnings /earnings 200
+/leaderboard /leaderboard 200
+
+# API Routes (if you have any)
+/api/* /api/:splat 200
+
+# Catch all - Serve index.html for SPA routing
 /* /index.html 200
+
+# Security Headers
+/*
+  X-Frame-Options: DENY
+  X-XSS-Protection: 1; mode=block
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
