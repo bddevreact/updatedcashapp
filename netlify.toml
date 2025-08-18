@@ -1,6 +1,6 @@
 [build]
-  # Build command
-  command = "npm run build"
+  # Build command - Simple and reliable
+  command = "npm install && npm run build"
   
   # Publish directory
   publish = "dist"
