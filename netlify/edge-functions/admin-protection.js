@@ -7,12 +7,12 @@ export default async (request, context) => {
 
   // Only apply to admin routes
   if (!path.startsWith('/admin')) {
-    return;
+    return context.next();
   }
 
   // Allow access to admin login page
   if (path === '/admin/login') {
-    return;
+    return context.next();
   }
 
   try {

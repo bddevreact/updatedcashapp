@@ -146,14 +146,11 @@
   VITE_APP_ENV = "preview"
 
 [context.branch-deploy.environment]
+  NODE_VERSION = "18"
   NODE_ENV = "branch"
   VITE_APP_ENV = "branch"
 
 # Functions (if you want to add serverless functions later)
 [functions]
   directory = "netlify/functions"
-  node_bundler = "esbuild"
-
-# Edge functions (if you want to use edge functions)
-[edge_functions]
-  directory = "netlify/edge-functions" 
+  node_bundler = "esbuild" 
