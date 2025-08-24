@@ -208,20 +208,22 @@ export default function Wallet() {
       });
 
       // Send notification to database for admin review
-      await sendUserNotification(
-        telegramId,
-        'info',
-        'Deposit Request Submitted 📥',
-        `Your deposit request of ৳${amount} has been submitted and is under review.`
-      );
+      if (telegramId) {
+        await sendUserNotification(
+          telegramId,
+          'info',
+          'Deposit Request Submitted 📥',
+          `Your deposit request of ৳${amount} has been submitted and is under review.`
+        );
 
-      // Send notification for successful deposit
-      await sendUserNotification(
-        telegramId,
-        'success',
-        'Deposit Completed Successfully! 💰',
-        `Your deposit of ৳${amount} has been processed and added to your balance.`
-      );
+        // Send notification for successful deposit
+        await sendUserNotification(
+          telegramId,
+          'success',
+          'Deposit Completed Successfully! 💰',
+          `Your deposit of ৳${amount} has been processed and added to your balance.`
+        );
+      }
 
       // Reset form
       setAmount('');
@@ -237,12 +239,14 @@ export default function Wallet() {
       loadRecentTransactions();
 
       // Send notification about balance update
-      await sendUserNotification(
-        telegramId,
-        'success',
-        'Balance Updated 💰',
-        `Your balance has been updated. New balance: ${formatCurrency(balance - parseFloat(amount))}`
-      );
+      if (telegramId) {
+        await sendUserNotification(
+          telegramId,
+          'success',
+          'Balance Updated 💰',
+          `Your balance has been updated. New balance: ${formatCurrency(balance - parseFloat(amount))}`
+        );
+      }
 
     } catch (error: any) {
       console.error('Error creating deposit:', error);
@@ -377,12 +381,14 @@ export default function Wallet() {
       });
 
       // Send notification to database for admin review
-      await sendUserNotification(
-        telegramId,
-        'info',
-        'Withdrawal Request Submitted 📤',
-        `Your withdrawal request of ৳${amount} has been submitted and is under review.`
-      );
+      if (telegramId) {
+        await sendUserNotification(
+          telegramId,
+          'info',
+          'Withdrawal Request Submitted 📤',
+          `Your withdrawal request of ৳${amount} has been submitted and is under review.`
+        );
+      }
 
       // Reset form after success
       setTimeout(() => {
@@ -399,12 +405,14 @@ export default function Wallet() {
       loadRecentTransactions();
 
       // Send notification about balance update
-      await sendUserNotification(
-        telegramId,
-        'success',
-        'Balance Updated 💰',
-        `Your balance has been updated. New balance: ${formatCurrency(balance - parseFloat(amount))}`
-      );
+      if (telegramId) {
+        await sendUserNotification(
+          telegramId,
+          'success',
+          'Balance Updated 💰',
+          `Your balance has been updated. New balance: ${formatCurrency(balance - parseFloat(amount))}`
+        );
+      }
 
     } catch (error: any) {
       console.error('Error creating withdrawal:', error);
