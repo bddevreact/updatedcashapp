@@ -80,7 +80,10 @@ export default function Earnings() {
 
   // Load user stats from database
   const loadUserStats = async () => {
-    if (!telegramId) return;
+    if (!telegramId) {
+      setIsLoading(false);
+      return;
+    }
 
     try {
       // Use the user_earnings_summary view for better performance
@@ -98,30 +101,45 @@ export default function Earnings() {
           .eq('telegram_id', telegramId)
           .single();
 
-        if (fallbackError) throw fallbackError;
-
-        if (fallbackData) {
+        if (fallbackError) {
+          console.error('Error loading user stats:', fallbackError);
+          // Set default values if both queries fail
+          setUserStats({
+            total_earnings: 0,
+            total_referrals: 0,
+            balance: 0,
+            level: 1,
+            experience_points: 0
+          });
+        } else {
           setUserStats(fallbackData);
-          setLifetimeEarnings(fallbackData.total_earnings || 0);
         }
-      } else if (userData) {
-        // Use data from the view
-        setUserStats({
-          total_earnings: userData.total_earnings || 0,
-          total_referrals: userData.total_referrals || 0,
-          balance: userData.balance || 0,
-          level: userData.level || 1,
-          experience_points: userData.experience_points || 0
-        });
-        setLifetimeEarnings(userData.total_earnings || 0);
+      } else {
+        setUserStats(userData);
       }
+
+      // Set loading to false after stats are loaded
+      setIsLoading(false);
+
     } catch (error) {
       console.error('Error loading user stats:', error);
+      // Set default values on error
+      setUserStats({
+        total_earnings: 0,
+        total_referrals: 0,
+        balance: 0,
+        level: 1,
+        experience_points: 0
+      });
+      setIsLoading(false);
     }
   };
 
   const loadEarningsData = async () => {
-    if (!telegramId) return;
+    if (!telegramId) {
+      setIsLoading(false);
+      return;
+    }
 
     try {
       // Try to use the recent_earnings view first
@@ -141,7 +159,14 @@ export default function Earnings() {
           .order('created_at', { ascending: false })
           .limit(50);
 
-        if (earningsError) throw earningsError;
+        if (earningsError) {
+          console.error('Error loading earnings:', earningsError);
+          // Set empty arrays on error
+          setEarningsHistory([]);
+          setLiveEarnings([]);
+          setIsLoading(false);
+          return;
+        }
 
         // Transform earnings data
         const earningsHistory = earnings?.map((earning: any) => ({
@@ -198,9 +223,14 @@ export default function Earnings() {
       }
 
       setLastUpdate(new Date());
+      setIsLoading(false);
 
     } catch (error) {
       console.error('Error loading earnings data:', error);
+      // Set empty arrays on error
+      setEarningsHistory([]);
+      setLiveEarnings([]);
+      setIsLoading(false);
     }
   };
 
@@ -217,25 +247,40 @@ export default function Earnings() {
   // Load earnings data on component mount
   useEffect(() => {
     const loadData = async () => {
-      await loadUserStats();
-      await loadEarningsData();
+      if (telegramId) {
+        setIsLoading(true);
+        await loadUserStats();
+        await loadEarningsData();
+      } else {
+        setIsLoading(false);
+      }
     };
     
-    if (telegramId) {
-      loadData();
-    }
+    loadData();
   }, [telegramId]);
 
   // Auto-refresh earnings data
   useEffect(() => {
+    if (!telegramId || !isLive) return;
+    
     const interval = setInterval(() => {
-      if (isLive) {
-        loadEarningsData();
-      }
+      loadEarningsData();
     }, 30000); // Every 30 seconds
 
     return () => clearInterval(interval);
   }, [isLive, telegramId]);
+
+  // Add timeout to prevent infinite loading
+  useEffect(() => {
+    const timeout = setTimeout(() => {
+      if (isLoading) {
+        console.warn('Loading timeout reached, forcing loading to false');
+        setIsLoading(false);
+      }
+    }, 10000); // 10 second timeout
+
+    return () => clearTimeout(timeout);
+  }, [isLoading]);
 
   const formatCurrency = (amount: number) => {
     return `৳${amount.toLocaleString('en-IN')}`;
@@ -259,31 +304,60 @@ export default function Earnings() {
   const earningsBreakdown = getEarningsBreakdown();
   const monthlyEarnings = Math.floor(earningsBreakdown.total * 0.8); // Calculate based on actual data
 
-  // Check if data is loaded
-  const isDataLoaded = userStats !== null && balance !== undefined;
+  // Fallback values when data is not available
+  const fallbackStats = {
+    total_earnings: 0,
+    total_referrals: 0,
+    balance: balance || 0,
+    level: 1,
+    experience_points: 0
+  };
 
-  // Set loading to false when data is loaded
+  const currentStats = userStats || fallbackStats;
+
+  // Check if data is loaded
+  const isDataLoaded = userStats !== null || earningsHistory.length > 0 || balance !== undefined;
+
+  // Set loading to false when data is loaded or after timeout
   useEffect(() => {
     if (isDataLoaded) {
       setIsLoading(false);
     }
   }, [isDataLoaded]);
 
+  // Force loading to false after 5 seconds if still loading
+  useEffect(() => {
+    const forceStopLoading = setTimeout(() => {
+      if (isLoading) {
+        console.warn('Force stopping loading after 5 seconds');
+        setIsLoading(false);
+      }
+    }, 5000);
+
+    return () => clearTimeout(forceStopLoading);
+  }, [isLoading]);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-navy via-navy to-gray-900 text-white p-4 pb-24">
       {/* Loading State */}
-      {!isDataLoaded && (
+      {isLoading && (
         <div className="flex items-center justify-center min-h-[50vh]">
           <div className="text-center">
             <div className="animate-spin rounded-full h-16 w-16 border-b-2 border-gold mx-auto mb-4"></div>
             <p className="text-gray-400 text-lg">Loading earnings data...</p>
             <p className="text-gray-500 text-sm">Please wait while we fetch your data</p>
+            <button 
+              onClick={() => setIsLoading(false)}
+              className="mt-4 px-4 py-2 bg-gray-600 hover:bg-gray-700 rounded-lg text-sm transition-colors"
+            >
+              Skip Loading
+            </button>
           </div>
         </div>
       )}
 
-      {/* Main Content - Only show when data is loaded */}
-      {isDataLoaded && (
+      {/* Main Content - Show when data is loaded or loading is forced to stop */}
+      {(!isLoading || isDataLoaded) && (
         <>
           {/* Header with Live Status */}
           <div className="flex items-center justify-between mb-6">
@@ -311,18 +385,16 @@ export default function Earnings() {
                     {isLive ? 'LIVE' : 'PAUSED'}
                   </span>
                 </div>
-                <motion.p 
-                  className="text-gray-300 text-sm"
-                  initial={{ opacity: 0, y: -20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.5, delay: 0.3 }}
-                >
-                  {liveEarnings.length > 0 && (
-                    <span className="text-blue-400">
-                      {liveEarnings.length} live earnings
-                    </span>
-                  )}
-                </motion.p>
+                {liveEarnings.length > 0 && (
+                  <motion.p 
+                    className="text-gray-300 text-sm"
+                    initial={{ opacity: 0, y: -20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.5, delay: 0.3 }}
+                  >
+                    {liveEarnings.length} live earnings
+                  </motion.p>
+                )}
               </div>
             </div>
             
@@ -357,6 +429,52 @@ export default function Earnings() {
               </motion.button>
             </div>
           </div>
+
+          {/* Data Loading Status */}
+          {!isDataLoaded && (
+            <motion.div 
+              className="bg-gradient-to-r from-yellow-500/20 to-orange-500/20 rounded-xl p-4 backdrop-blur-sm border border-yellow-500/30 mb-6"
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.5 }}
+            >
+              <div className="text-center">
+                <motion.div 
+                  className="text-2xl mb-2"
+                  initial={{ scale: 0.5 }}
+                  animate={{ scale: 1 }}
+                  transition={{ duration: 0.6, type: "spring" }}
+                >
+                  ⚠️
+                </motion.div>
+                <motion.h4 
+                  className="text-md font-semibold text-yellow-400 mb-2"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.2 }}
+                >
+                  Data Loading Issue
+                </motion.h4>
+                <motion.p 
+                  className="text-sm text-gray-300 mb-3"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.4 }}
+                >
+                  Some earnings data couldn't be loaded. You can still view the interface and try refreshing.
+                </motion.p>
+                <motion.button
+                  onClick={handleRefresh}
+                  className="px-4 py-2 bg-yellow-500 hover:bg-yellow-600 text-white rounded-lg font-semibold transition-all duration-300"
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.5, delay: 0.6 }}
+                >
+                  Try Again
+                </motion.button>
+              </div>
+            </motion.div>
+          )}
 
           {/* Earn Real Money Banner */}
           <motion.div 
@@ -423,7 +541,7 @@ export default function Earnings() {
                 {formatCurrency(earningsBreakdown.total)}
               </motion.p>
               <p className="text-gray-400 text-sm">Lifetime earnings in real money</p>
-              <p className="text-xs text-gray-500 mt-1">From database: {userStats?.total_earnings || 0} BDT</p>
+                              <p className="text-xs text-gray-500 mt-1">From database: {currentStats.total_earnings} BDT</p>
             </div>
           </motion.div>
 
@@ -470,7 +588,7 @@ export default function Earnings() {
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Total Referrals</span>
-                <span className="font-semibold">{userStats?.total_referrals || 0}</span>
+                <span className="font-semibold">{currentStats.total_referrals}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Success Rate</span>
@@ -478,7 +596,7 @@ export default function Earnings() {
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Current Level</span>
-                <span className="font-semibold text-gold">{userStats?.level || 1}</span>
+                <span className="font-semibold text-gold">{currentStats.level}</span>
               </div>
             </div>
           </div>
