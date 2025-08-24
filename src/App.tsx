@@ -24,7 +24,6 @@ import { useUserStore } from './store/userStore';
 
 function App() {
   const [loading, setLoading] = useState(true);
-  const [isDemoMode, setIsDemoMode] = useState(false);
   const { loadUserData, setUser } = useUserStore();
 
   // Initialize Telegram Web App and load user data
@@ -43,16 +42,22 @@ function App() {
             photoUrl: user.photo_url || `https://api.dicebear.com/7.x/avataaars/svg?seed=${user.id}`
           });
           loadUserData(user.id.toString());
+        } else {
+          // No user data available - redirect to error page or show message
+          console.error('No Telegram user data available');
+          setLoading(false);
+          return;
         }
       } catch (error) {
-        console.warn('Telegram WebApp API error:', error);
-        // Fallback to demo mode
-        handleDemoMode();
+        console.error('Telegram WebApp API error:', error);
+        setLoading(false);
+        return;
       }
     } else {
-      console.log('Telegram WebApp API not available - running in demo mode');
-      // Fallback to demo mode for development/testing
-      handleDemoMode();
+      // Telegram WebApp not available - show error
+      console.error('Telegram WebApp API not available');
+      setLoading(false);
+      return;
     }
     
     // Set viewport height for mobile
@@ -64,26 +69,19 @@ function App() {
       const vh = window.innerHeight * 0.01;
       document.documentElement.style.setProperty('--vh', `${vh}px`);
     });
+
+    setLoading(false);
   }, [loadUserData, setUser]);
 
-  // Handle demo mode when Telegram API is not available
-  const handleDemoMode = () => {
-    setIsDemoMode(true);
-    // Set demo user data
-    setUser({
-      name: 'Demo User',
-      photoUrl: 'https://api.dicebear.com/7.x/avataaars/svg?seed=demo'
-    });
-    
-    // Load demo data
-    loadUserData('demo_user_123');
-  };
+  // Show loading screen while initializing
+  if (loading) {
+    return <LoadingScreen onComplete={() => {}} />;
+  }
 
   return (
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
-        <LoadingScreen onComplete={() => setLoading(false)} />
-        <div className={`transition-opacity duration-500 ${loading ? 'opacity-0' : 'opacity-100'}`}>
+        <div className="transition-opacity duration-500 opacity-100">
           <Router>
             <Routes>
               {/* Admin Routes */}
@@ -120,7 +118,7 @@ function App() {
                     {/* Content */}
                     <div className="relative z-10">
                       <Routes>
-                        <Route path="/" element={<Home isDemoMode={isDemoMode} />} />
+                        <Route path="/" element={<Home />} />
                         <Route path="/tasks" element={<Tasks />} />
                         <Route path="/referrals" element={<Referrals />} />
                         <Route path="/wallet" element={<Wallet />} />

@@ -740,10 +740,12 @@ export default function Tasks() {
         message: 'Your UID has been submitted for admin approval. You will be notified of the result.'
       });
 
-      // Don't close modal yet - show the pending status
-      // setShowSpecialTask(false);
-      // setCurrentSpecialTask(null);
-      // setSpecialTaskUID('');
+      // Close modal after successful submission with a small delay
+      setTimeout(() => {
+        setShowSpecialTask(false);
+        setCurrentSpecialTask(null);
+        setSpecialTaskUID('');
+      }, 2000); // 2 second delay to show success message
 
       // Refresh user data
       forceUpdate();
@@ -1817,28 +1819,28 @@ export default function Tasks() {
       {/* Special Task Modal */}
       {showSpecialTask && currentSpecialTask && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
-          <div className="glass p-6 rounded-lg max-w-md w-full border border-white/10">
-            <div className="text-center mb-6">
-              <div className="w-16 h-16 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Star className="w-8 h-8 text-white" />
+          <div className="glass p-4 rounded-lg max-w-sm w-full border border-white/10">
+            <div className="text-center mb-4">
+              <div className="w-12 h-12 bg-gradient-to-r from-purple-500 to-pink-500 rounded-full flex items-center justify-center mx-auto mb-3">
+                <Star className="w-6 h-6 text-white" />
               </div>
-              <h3 className="text-xl font-bold text-white mb-2">{currentSpecialTask.title}</h3>
-              <p className="text-gray-300 text-sm">{currentSpecialTask.subtitle}</p>
+              <h3 className="text-lg font-bold text-white mb-1">{currentSpecialTask.title}</h3>
+              <p className="text-gray-300 text-xs">{currentSpecialTask.subtitle}</p>
             </div>
 
             {/* Step 1: External Signup */}
-            <div className="mb-6">
-              <h4 className="text-lg font-semibold text-white mb-3">Step 1: Complete External Signup</h4>
-              <div className="bg-gray-800 p-3 rounded-lg border border-gray-600 mb-3">
-                <p className="text-sm text-gray-400 mb-2">Task description:</p>
-                <p className="text-sm text-gray-300">{currentSpecialTask.description}</p>
+            <div className="mb-4">
+              <h4 className="text-base font-semibold text-white mb-2">Step 1: Complete External Signup</h4>
+              <div className="bg-gray-800 p-2 rounded-lg border border-gray-600 mb-2">
+                <p className="text-xs text-gray-400 mb-1">Task description:</p>
+                <p className="text-xs text-gray-300">{currentSpecialTask.description}</p>
               </div>
               
               {currentSpecialTask.url && (
-                <div className="space-y-3">
+                <div className="space-y-2">
                   <button
                     onClick={() => window.open(currentSpecialTask.url, '_blank')}
-                    className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-3 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-300 font-semibold"
+                    className="w-full bg-gradient-to-r from-purple-600 to-pink-600 text-white py-2 rounded-lg hover:from-purple-700 hover:to-pink-700 transition-all duration-300 font-semibold text-sm"
                   >
                     🔗 Sign Up Now
                   </button>
@@ -1848,30 +1850,16 @@ export default function Tasks() {
                 </div>
               )}
               
-              <div className="mt-4 p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
+              <div className="mt-2 p-2 bg-blue-500/10 rounded-lg border border-blue-500/20">
                 <p className="text-xs text-blue-400 text-center">
                   💡 After completing signup, find your UID/Reference number in your profile
                 </p>
               </div>
-              
-              {/* Global UID Restriction Info */}
-              <div className="mt-4 p-3 bg-red-500/10 rounded-lg border border-red-500/20">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-red-400 text-lg">⚠️</span>
-                  <span className="text-red-400 text-sm font-medium">Important: Global UID Restriction</span>
-                </div>
-                <div className="text-xs text-red-300 space-y-1">
-                  <div>• Each UID can only be used ONCE in the entire system</div>
-                  <div>• If another user has already used a UID, you cannot use it</div>
-                  <div>• Make sure your UID is unique and correct before submitting</div>
-                  <div>• UIDs are tied to specific tasks and cannot be reused</div>
-                </div>
-              </div>
             </div>
 
             {/* Step 2: UID Input */}
-            <div className="mb-6">
-              <h4 className="text-lg font-semibold text-white mb-3">Step 2: Submit Your UID</h4>
+            <div className="mb-4">
+              <h4 className="text-base font-semibold text-white mb-2">Step 2: Submit Your UID</h4>
               <div className="space-y-3">
                 <div className="relative">
                   <input
@@ -1879,7 +1867,7 @@ export default function Tasks() {
                     value={specialTaskUID}
                     onChange={(e) => setSpecialTaskUID(e.target.value)}
                     placeholder="Enter your UID/Reference number"
-                    className={`w-full px-4 py-3 rounded-lg border-2 focus:outline-none transition-all duration-300 ${
+                    className={`w-full px-3 py-2 rounded-lg border-2 focus:outline-none transition-all duration-300 ${
                       specialTaskStatus !== 'pending' 
                         ? 'bg-gray-700 text-gray-400 border-gray-600 cursor-not-allowed'
                         : 'bg-gray-800 text-white border-gray-600 focus:border-purple-500'
@@ -1911,7 +1899,7 @@ export default function Tasks() {
 
             {/* Status Display */}
             {specialTaskStatus !== 'pending' && (
-              <div className="mb-6 p-4 rounded-lg border border-white/10">
+              <div className="mb-4 p-3 rounded-lg border border-white/10">
                 <div className="flex items-center gap-3 mb-2">
                   {specialTaskStatus === 'verified' ? (
                     <CheckCircle className="w-5 h-5 text-green-400" />
@@ -1935,7 +1923,7 @@ export default function Tasks() {
 
             {/* Success Message After Submission */}
             {specialTaskSubmissionId && specialTaskStatus === 'pending' && (
-              <div className="mb-6 p-4 rounded-lg border border-green-500/20 bg-green-500/10">
+              <div className="mb-4 p-3 rounded-lg border border-green-500/20 bg-green-500/10">
                 <div className="flex items-center gap-3 mb-2">
                   <CheckCircle className="w-5 h-5 text-green-400" />
                   <span className="font-semibold text-green-400">Successfully Submitted! 🎉</span>
@@ -1949,31 +1937,31 @@ export default function Tasks() {
                   <div>• Submitted: <span className="font-medium">{specialTaskSubmissionTime ? new Date(specialTaskSubmissionTime).toLocaleString() : 'Just now'}</span></div>
                 </div>
                 <p className="text-xs text-green-400 mt-2">
-                  💡 You will be notified when admin reviews your submission.
+                  💡 You will be notified when admin reviews your submission. Modal will close automatically in 2 seconds.
                 </p>
               </div>
             )}
 
             {/* Action Buttons */}
             <div className="flex gap-3">
-              <button
-                onClick={() => {
-                  setShowSpecialTask(false);
-                  setCurrentSpecialTask(null);
-                  setSpecialTaskUID('');
-                  setSpecialTaskStatus('pending');
-                  setSpecialTaskSubmissionId(null);
-                  setSpecialTaskSubmissionTime(null);
-                }}
-                className="flex-1 py-3 px-4 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-all duration-300"
-              >
-                Close
-              </button>
+                              <button
+                  onClick={() => {
+                    setShowSpecialTask(false);
+                    setCurrentSpecialTask(null);
+                    setSpecialTaskUID('');
+                    setSpecialTaskStatus('pending');
+                    setSpecialTaskSubmissionId(null);
+                    setSpecialTaskSubmissionTime(null);
+                  }}
+                  className="flex-1 py-2 px-3 bg-gray-600 hover:bg-gray-700 text-white rounded-lg transition-all duration-300 text-sm"
+                >
+                  Close
+                </button>
               {specialTaskStatus === 'pending' && !specialTaskSubmissionId && (
                 <button
                   onClick={handleSpecialTaskUIDSubmit}
                   disabled={!specialTaskUID.trim() || isCheckingUID}
-                  className={`flex-1 py-3 px-4 rounded-lg transition-all duration-300 font-semibold ${
+                  className={`flex-1 py-2 px-3 rounded-lg transition-all duration-300 font-semibold text-sm ${
                     specialTaskUID.trim() && !isCheckingUID
                       ? 'bg-gradient-to-r from-purple-500 to-pink-500 text-white hover:from-purple-600 hover:to-pink-600' 
                       : 'bg-gray-600 text-gray-400 cursor-not-allowed'
@@ -1992,7 +1980,7 @@ export default function Tasks() {
                     setSpecialTaskSubmissionId(null);
                     setSpecialTaskSubmissionTime(null);
                   }}
-                  className="flex-1 py-3 px-4 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all duration-300 font-semibold"
+                  className="flex-1 py-2 px-3 bg-green-600 hover:bg-green-700 text-white rounded-lg transition-all duration-300 font-semibold text-sm"
                 >
                   Done
                 </button>

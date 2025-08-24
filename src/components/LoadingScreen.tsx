@@ -26,7 +26,7 @@ export default function LoadingScreen({ onComplete }: Props) {
   ]);
 
   useEffect(() => {
-    const totalDuration = 5000; // 5 seconds total
+    const totalDuration = 10000; // 10 seconds total
     const stepDuration = totalDuration / (loadingSteps.length + 1); // Reserve 1 step duration for final fade
     let currentStep = 0;
 

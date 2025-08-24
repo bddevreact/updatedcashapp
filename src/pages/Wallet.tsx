@@ -5,7 +5,6 @@ import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 import { sendUserNotification } from '../lib/notifications';
-import telegramBot from '../lib/telegramBot';
 
 export default function Wallet() {
   const { balance, updateBalance, telegramId, addNotification, stats } = useUserStore();
@@ -216,19 +215,6 @@ export default function Wallet() {
         `Your deposit request of ৳${amount} has been submitted and is under review.`
       );
 
-      // Send Telegram bot notification
-      try {
-        if (telegramId) {
-          await telegramBot.sendNotification(
-            parseInt(telegramId),
-            `Your deposit request of ৳${amount} has been submitted and is under review.`,
-            'info'
-          );
-        }
-      } catch (error) {
-        console.log('Bot notification failed:', error);
-      }
-
       // Send notification for successful deposit
       await sendUserNotification(
         telegramId,
@@ -236,19 +222,6 @@ export default function Wallet() {
         'Deposit Completed Successfully! 💰',
         `Your deposit of ৳${amount} has been processed and added to your balance.`
       );
-
-      // Send Telegram bot notification for deposit completion
-      try {
-        if (telegramId) {
-          await telegramBot.sendNotification(
-            parseInt(telegramId),
-            `Your deposit of ৳${amount} has been processed and added to your balance!`,
-            'success'
-          );
-        }
-      } catch (error) {
-        console.log('Bot notification failed:', error);
-      }
 
       // Reset form
       setAmount('');
@@ -411,19 +384,6 @@ export default function Wallet() {
         `Your withdrawal request of ৳${amount} has been submitted and is under review.`
       );
 
-      // Send Telegram bot notification for withdrawal submission
-      try {
-        if (telegramId) {
-          await telegramBot.sendNotification(
-            parseInt(telegramId),
-            `Your withdrawal request of ৳${amount} has been submitted and is under review.`,
-            'info'
-          );
-        }
-      } catch (error) {
-        console.log('Bot notification failed:', error);
-      }
-
       // Reset form after success
       setTimeout(() => {
         setAmount('');
@@ -445,19 +405,6 @@ export default function Wallet() {
         'Balance Updated 💰',
         `Your balance has been updated. New balance: ${formatCurrency(balance - parseFloat(amount))}`
       );
-
-      // Send Telegram bot notification for balance update
-      try {
-        if (telegramId) {
-          await telegramBot.sendNotification(
-            parseInt(telegramId),
-            `Your balance has been updated. New balance: ${formatCurrency(balance - parseFloat(amount))}`,
-            'success'
-          );
-        }
-      } catch (error) {
-        console.log('Bot notification failed:', error);
-      }
 
     } catch (error: any) {
       console.error('Error creating withdrawal:', error);
@@ -1197,7 +1144,7 @@ export default function Wallet() {
                   : '💡 Complete more tasks or earn referral bonuses to increase your balance!'
                 }
               </motion.div>
-            </div>
+                </div>
           </motion.div>
         )}
 
@@ -1225,8 +1172,8 @@ export default function Wallet() {
                 ? 'Low Balance'
                 : 'No Balance'
               }
-            </div>
-          </div>
+                </div>
+              </div>
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-400">Current Balance:</span>
@@ -1234,267 +1181,267 @@ export default function Wallet() {
                 balance >= 100 ? 'text-green-400' : 'text-red-400'
               }`}>
                 {formatCurrency(balance)}
-              </span>
-            </div>
+                    </span>
+                            </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-400">Minimum Withdrawal:</span>
               <span className="text-yellow-400 font-semibold">৳100</span>
-            </div>
+                          </div>
             <div className="flex items-center justify-between">
               <span className="text-sm text-gray-400">Remaining to Withdraw:</span>
               <span className={`font-semibold ${
                 balance >= 100 ? 'text-green-400' : 'text-red-400'
               }`}>
                 {balance >= 100 ? '৳0' : formatCurrency(100 - balance)}
-              </span>
-            </div>
-          </div>
-        </div>
+                    </span>
+                    </div>
+                </div>
+                </div>
 
-        {/* Withdrawal Method Selection */}
-        <div className="glass p-5 mb-6 border border-white/10">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <Zap className="w-5 h-5 text-gold" />
-            Withdrawal Method
-          </h3>
-          
-          {/* Main Method Buttons - Always Visible */}
-          <div className="grid grid-cols-3 gap-3 mb-4">
-            {/* Mobile Banking Button */}
-            <button
-              onClick={() => setWithdrawMethod('bkash')}
-              className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg transition-all duration-300 border-2 ${
-                (withdrawMethod === 'bkash' || withdrawMethod === 'nagad' || withdrawMethod === 'rocket')
-                  ? 'border-blue-500 bg-blue-500/20 text-blue-500' 
-                  : 'border-gray-600 bg-gray-700 text-white hover:border-gray-500'
-              }`}
-            >
-              <Smartphone className="w-4 h-4" />
-              <span className="text-xs font-semibold">Mobile Banking</span>
-            </button>
-
-            {/* Bank Transfer Button */}
-            <button
-              onClick={() => setWithdrawMethod('bank')}
-              className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg transition-all duration-300 border-2 ${
-                withdrawMethod === 'bank' 
-                  ? 'border-orange-500 bg-orange-500/20 text-orange-500' 
-                  : 'border-gray-600 bg-gray-700 text-white hover:border-gray-500'
-              }`}
-            >
-              <Building className="w-4 h-4" />
-              <span className="text-xs font-semibold">Bank Transfer</span>
-            </button>
-
-            {/* Cryptocurrency Button */}
-            <button
-              onClick={() => setWithdrawMethod('crypto')}
-              className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg transition-all duration-300 border-2 ${
-                withdrawMethod === 'crypto' 
-                  ? 'border-yellow-500 bg-yellow-500/20 text-yellow-500' 
-                  : 'border-gray-600 bg-gray-700 text-white hover:border-gray-500'
-              }`}
-            >
-              <Bitcoin className="w-4 h-4" />
-              <span className="text-xs font-semibold">Cryptocurrency</span>
-            </button>
-          </div>
-
-          {/* Mobile Banking Sub-options - Only show when Mobile Banking is selected */}
-          {(withdrawMethod === 'bkash' || withdrawMethod === 'nagad' || withdrawMethod === 'rocket') && (
-            <div className="mb-4 p-3 bg-gray-800/50 rounded-lg border border-blue-500/20">
-              <h4 className="text-sm font-medium text-blue-400 mb-3 flex items-center gap-2">
+          {/* Withdrawal Method Selection */}
+          <div className="glass p-5 mb-6 border border-white/10">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <Zap className="w-5 h-5 text-gold" />
+              Withdrawal Method
+            </h3>
+            
+            {/* Main Method Buttons - Always Visible */}
+            <div className="grid grid-cols-3 gap-3 mb-4">
+              {/* Mobile Banking Button */}
+              <button
+                onClick={() => setWithdrawMethod('bkash')}
+                className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg transition-all duration-300 border-2 ${
+                  (withdrawMethod === 'bkash' || withdrawMethod === 'nagad' || withdrawMethod === 'rocket')
+                    ? 'border-blue-500 bg-blue-500/20 text-blue-500' 
+                    : 'border-gray-600 bg-gray-700 text-white hover:border-gray-500'
+                }`}
+              >
                 <Smartphone className="w-4 h-4" />
-                Select Mobile Banking Method
-              </h4>
-              <div className="grid grid-cols-3 gap-2">
-                <button
-                  onClick={() => setWithdrawMethod('bkash')}
-                  className={`flex items-center justify-center gap-2 py-2 px-2 rounded-lg transition-all duration-300 border-2 text-xs ${
-                    withdrawMethod === 'bkash' 
-                      ? 'border-green-500 bg-green-500/20 text-green-500' 
-                      : 'border-gray-600 bg-gray-700 text-white hover:border-gray-500'
-                  }`}
-                >
-                  <Smartphone className="w-3 h-3" />
-                  <span className="font-medium">Bkash</span>
-                </button>
-                <button
-                  onClick={() => setWithdrawMethod('nagad')}
-                  className={`flex items-center justify-center gap-2 py-2 px-2 rounded-lg transition-all duration-300 border-2 text-xs ${
-                    withdrawMethod === 'nagad' 
-                      ? 'border-blue-500 bg-blue-500/20 text-blue-500' 
-                      : 'border-gray-600 bg-gray-700 text-white hover:border-gray-500'
-                  }`}
-                >
-                  <Smartphone className="w-3 h-3" />
-                  <span className="font-medium">Nagad</span>
-                </button>
-                <button
-                  onClick={() => setWithdrawMethod('rocket')}
-                  className={`flex items-center justify-center gap-2 py-2 px-2 rounded-lg transition-all duration-300 border-2 text-xs ${
-                    withdrawMethod === 'rocket' 
-                      ? 'border-purple-500 bg-purple-500/20 text-purple-500' 
-                      : 'border-gray-600 bg-gray-700 text-white hover:border-gray-500'
-                  }`}
-                >
-                  <Smartphone className="w-3 h-3" />
-                  <span className="font-medium">Rocket</span>
-                </button>
-              </div>
+                <span className="text-xs font-semibold">Mobile Banking</span>
+              </button>
+
+              {/* Bank Transfer Button */}
+              <button
+                onClick={() => setWithdrawMethod('bank')}
+                className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg transition-all duration-300 border-2 ${
+                  withdrawMethod === 'bank' 
+                    ? 'border-orange-500 bg-orange-500/20 text-orange-500' 
+                    : 'border-gray-600 bg-gray-700 text-white hover:border-gray-500'
+                }`}
+              >
+                <Building className="w-4 h-4" />
+                <span className="text-xs font-semibold">Bank Transfer</span>
+              </button>
+
+              {/* Cryptocurrency Button */}
+              <button
+                onClick={() => setWithdrawMethod('crypto')}
+                className={`flex items-center justify-center gap-2 py-3 px-3 rounded-lg transition-all duration-300 border-2 ${
+                  withdrawMethod === 'crypto' 
+                    ? 'border-yellow-500 bg-yellow-500/20 text-yellow-500' 
+                    : 'border-gray-600 bg-gray-700 text-white hover:border-gray-500'
+                }`}
+              >
+                <Bitcoin className="w-4 h-4" />
+                <span className="text-xs font-semibold">Cryptocurrency</span>
+              </button>
             </div>
-          )}
-          
-          {/* Method Info */}
-          <div className={`mt-4 p-4 rounded-lg ${getWithdrawMethodInfo().bgColor} border border-current/20`}>
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center gap-3">
-                {React.createElement(getWithdrawMethodInfo().icon, { className: `w-5 h-5 ${getWithdrawMethodInfo().color}` })}
-                <h4 className={`font-semibold ${getWithdrawMethodInfo().color}`}>{getWithdrawMethodInfo().name}</h4>
+
+            {/* Mobile Banking Sub-options - Only show when Mobile Banking is selected */}
+            {(withdrawMethod === 'bkash' || withdrawMethod === 'nagad' || withdrawMethod === 'rocket') && (
+              <div className="mb-4 p-3 bg-gray-800/50 rounded-lg border border-blue-500/20">
+                <h4 className="text-sm font-medium text-blue-400 mb-3 flex items-center gap-2">
+                  <Smartphone className="w-4 h-4" />
+                  Select Mobile Banking Method
+                </h4>
+                <div className="grid grid-cols-3 gap-2">
+                  <button
+                    onClick={() => setWithdrawMethod('bkash')}
+                    className={`flex items-center justify-center gap-2 py-2 px-2 rounded-lg transition-all duration-300 border-2 text-xs ${
+                      withdrawMethod === 'bkash' 
+                        ? 'border-green-500 bg-green-500/20 text-green-500' 
+                        : 'border-gray-600 bg-gray-700 text-white hover:border-gray-500'
+                    }`}
+                  >
+                    <Smartphone className="w-3 h-3" />
+                    <span className="font-medium">Bkash</span>
+                  </button>
+                  <button
+                    onClick={() => setWithdrawMethod('nagad')}
+                    className={`flex items-center justify-center gap-2 py-2 px-2 rounded-lg transition-all duration-300 border-2 text-xs ${
+                      withdrawMethod === 'nagad' 
+                        ? 'border-blue-500 bg-blue-500/20 text-blue-500' 
+                        : 'border-gray-600 bg-gray-700 text-white hover:border-gray-500'
+                    }`}
+                  >
+                    <Smartphone className="w-3 h-3" />
+                    <span className="font-medium">Nagad</span>
+                  </button>
+                  <button
+                    onClick={() => setWithdrawMethod('rocket')}
+                    className={`flex items-center justify-center gap-2 py-2 px-2 rounded-lg transition-all duration-300 border-2 text-xs ${
+                      withdrawMethod === 'rocket' 
+                        ? 'border-purple-500 bg-purple-500/20 text-purple-500' 
+                        : 'border-gray-600 bg-gray-700 text-white hover:border-gray-500'
+                    }`}
+                  >
+                    <Smartphone className="w-3 h-3" />
+                    <span className="font-medium">Rocket</span>
+                  </button>
+                </div>
               </div>
-              <span className="text-xs text-gray-400">Processing: {getWithdrawMethodInfo().processingTime}</span>
-            </div>
-            <p className="text-gray-300 text-sm mb-2">{getWithdrawMethodInfo().description}</p>
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-400">Minimum withdrawal: ৳{getWithdrawMethodInfo().minAmount}</span>
-              <span className="text-gray-400">Fee: Free</span>
+            )}
+            
+            {/* Method Info */}
+            <div className={`mt-4 p-4 rounded-lg ${getWithdrawMethodInfo().bgColor} border border-current/20`}>
+              <div className="flex items-center justify-between mb-2">
+                <div className="flex items-center gap-3">
+                  {React.createElement(getWithdrawMethodInfo().icon, { className: `w-5 h-5 ${getWithdrawMethodInfo().color}` })}
+                  <h4 className={`font-semibold ${getWithdrawMethodInfo().color}`}>{getWithdrawMethodInfo().name}</h4>
+                </div>
+                <span className="text-xs text-gray-400">Processing: {getWithdrawMethodInfo().processingTime}</span>
+              </div>
+              <p className="text-gray-300 text-sm mb-2">{getWithdrawMethodInfo().description}</p>
+              <div className="flex items-center justify-between text-xs">
+                <span className="text-gray-400">Minimum withdrawal: ৳{getWithdrawMethodInfo().minAmount}</span>
+                <span className="text-gray-400">Fee: Free</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Account Details Input */}
-        <div className="glass p-5 mb-6 border border-white/10">
-          <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-gold" />
-            {withdrawMethod === 'crypto' ? 'Crypto Details' : 'Account Details'}
-          </h3>
-          <div className="space-y-4">
-            {/* Crypto Selection Dropdown */}
-            {withdrawMethod === 'crypto' && (
-              <div className="relative">
-                <label className="block text-gray-400 text-sm mb-2">Select Cryptocurrency</label>
-                <button
-                  onClick={() => setShowCryptoDropdown(!showCryptoDropdown)}
-                  className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border-2 border-gray-600 focus:border-gold focus:outline-none flex items-center justify-between"
-                >
-                  <span className={selectedCrypto ? 'text-white' : 'text-gray-400'}>
-                    {selectedCrypto || 'Choose cryptocurrency'}
-                  </span>
-                  <ChevronDown className={`w-5 h-5 transition-transform duration-200 ${showCryptoDropdown ? 'rotate-180' : ''}`} />
-                </button>
-                
-                {showCryptoDropdown && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
-                    {cryptocurrencies.map((crypto) => (
-                      <button
-                        key={crypto.id}
-                        onClick={() => {
-                          setSelectedCrypto(crypto.name);
-                          setShowCryptoDropdown(false);
-                        }}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-700 text-white border-b border-gray-700 last:border-b-0"
-                      >
-                        <div className="flex items-center gap-3">
-                          <span className="text-lg">{crypto.icon}</span>
-                          <div>
-                            <div className="font-medium">{crypto.name}</div>
-                            <div className="text-sm text-gray-400">{crypto.symbol}</div>
+          {/* Account Details Input */}
+          <div className="glass p-5 mb-6 border border-white/10">
+            <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-gold" />
+              {withdrawMethod === 'crypto' ? 'Crypto Details' : 'Account Details'}
+            </h3>
+            <div className="space-y-4">
+              {/* Crypto Selection Dropdown */}
+              {withdrawMethod === 'crypto' && (
+                <div className="relative">
+                  <label className="block text-gray-400 text-sm mb-2">Select Cryptocurrency</label>
+                  <button
+                    onClick={() => setShowCryptoDropdown(!showCryptoDropdown)}
+                    className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border-2 border-gray-600 focus:border-gold focus:outline-none flex items-center justify-between"
+                  >
+                    <span className={selectedCrypto ? 'text-white' : 'text-gray-400'}>
+                      {selectedCrypto || 'Choose cryptocurrency'}
+                    </span>
+                    <ChevronDown className={`w-5 h-5 transition-transform duration-200 ${showCryptoDropdown ? 'rotate-180' : ''}`} />
+                  </button>
+                  
+                  {showCryptoDropdown && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+                      {cryptocurrencies.map((crypto) => (
+                        <button
+                          key={crypto.id}
+                          onClick={() => {
+                            setSelectedCrypto(crypto.name);
+                            setShowCryptoDropdown(false);
+                          }}
+                          className="w-full text-left px-4 py-3 hover:bg-gray-700 text-white border-b border-gray-700 last:border-b-0"
+                        >
+                          <div className="flex items-center gap-3">
+                            <span className="text-lg">{crypto.icon}</span>
+                            <div>
+                              <div className="font-medium">{crypto.name}</div>
+                              <div className="text-sm text-gray-400">{crypto.symbol}</div>
+                            </div>
                           </div>
-                        </div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
-            {/* Bank Selection Dropdown */}
-            {withdrawMethod === 'bank' && (
-              <div className="relative">
-                <label className="block text-gray-400 text-sm mb-2">Select Bank</label>
-                <button
-                  onClick={() => setShowBankDropdown(!showBankDropdown)}
-                  className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border-2 border-gray-600 focus:border-gold focus:outline-none flex items-center justify-between"
-                >
-                  <span className={selectedBank ? 'text-white' : 'text-gray-400'}>
-                    {selectedBank || 'Choose your bank'}
-                  </span>
-                  <ChevronDown className={`w-5 h-5 transition-transform duration-200 ${showBankDropdown ? 'rotate-180' : ''}`} />
-                </button>
-                
-                {showBankDropdown && (
-                  <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
-                    {banks.map((bank) => (
-                      <button
-                        key={bank.id}
-                        onClick={() => {
-                          setSelectedBank(bank.name);
-                          setShowBankDropdown(false);
-                        }}
-                        className="w-full text-left px-4 py-3 hover:bg-gray-700 text-white border-b border-gray-700 last:border-b-0"
-                      >
-                        <div className="font-medium">{bank.name}</div>
-                        <div className="text-sm text-gray-400">{bank.code}</div>
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </div>
-            )}
+              {/* Bank Selection Dropdown */}
+              {withdrawMethod === 'bank' && (
+                <div className="relative">
+                  <label className="block text-gray-400 text-sm mb-2">Select Bank</label>
+                  <button
+                    onClick={() => setShowBankDropdown(!showBankDropdown)}
+                    className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border-2 border-gray-600 focus:border-gold focus:outline-none flex items-center justify-between"
+                  >
+                    <span className={selectedBank ? 'text-white' : 'text-gray-400'}>
+                      {selectedBank || 'Choose your bank'}
+                    </span>
+                    <ChevronDown className={`w-5 h-5 transition-transform duration-200 ${showBankDropdown ? 'rotate-180' : ''}`} />
+                  </button>
+                  
+                  {showBankDropdown && (
+                    <div className="absolute top-full left-0 right-0 mt-1 bg-gray-800 border border-gray-600 rounded-lg shadow-lg z-50 max-h-60 overflow-y-auto">
+                      {banks.map((bank) => (
+                        <button
+                          key={bank.id}
+                          onClick={() => {
+                            setSelectedBank(bank.name);
+                            setShowBankDropdown(false);
+                          }}
+                          className="w-full text-left px-4 py-3 hover:bg-gray-700 text-white border-b border-gray-700 last:border-b-0"
+                        >
+                          <div className="font-medium">{bank.name}</div>
+                          <div className="text-sm text-gray-400">{bank.code}</div>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
 
-            {/* Account Holder Name / Wallet Label */}
-            {(withdrawMethod === 'bank' || withdrawMethod === 'crypto') && (
-              <div>
-                <label className="block text-gray-400 text-sm mb-2">
-                  {withdrawMethod === 'bank' ? 'Account Holder Name' : 'Wallet Label (Optional)'}
-                </label>
-                <input
-                  type="text"
-                  value={accountName}
-                  onChange={(e) => setAccountName(e.target.value)}
-                  placeholder={withdrawMethod === 'bank' ? 'Enter account holder name' : 'Enter wallet label for reference'}
-                  className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border-2 border-gray-600 focus:border-gold focus:outline-none"
-                />
-              </div>
-            )}
-            
-            {/* Account Number / Wallet Address */}
-            {withdrawMethod === 'bank' && (
-              <div>
+              {/* Account Holder Name / Wallet Label */}
+              {(withdrawMethod === 'bank' || withdrawMethod === 'crypto') && (
+                <div>
+                  <label className="block text-gray-400 text-sm mb-2">
+                    {withdrawMethod === 'bank' ? 'Account Holder Name' : 'Wallet Label (Optional)'}
+                  </label>
+                  <input
+                    type="text"
+                    value={accountName}
+                    onChange={(e) => setAccountName(e.target.value)}
+                    placeholder={withdrawMethod === 'bank' ? 'Enter account holder name' : 'Enter wallet label for reference'}
+                    className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border-2 border-gray-600 focus:border-gold focus:outline-none"
+                  />
+                </div>
+              )}
+              
+              {/* Account Number / Wallet Address */}
+              {withdrawMethod === 'bank' && (
+                <div>
                 <label className="block text-sm text-gray-400 mb-2">Account Number</label>
-                <input
-                  type="text"
-                  value={accountNumber}
-                  onChange={(e) => setAccountNumber(e.target.value)}
-                  placeholder="Enter account number"
-                  className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border-2 border-gray-600 focus:border-gold focus:outline-none"
-                />
-              </div>
-            )}
-            
-            {/* Mobile Number / Wallet Address */}
-            {withdrawMethod !== 'bank' && (
-              <div>
+                  <input
+                    type="text"
+                    value={accountNumber}
+                    onChange={(e) => setAccountNumber(e.target.value)}
+                    placeholder="Enter account number"
+                    className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border-2 border-gray-600 focus:border-gold focus:outline-none"
+                  />
+                </div>
+              )}
+              
+              {/* Mobile Number / Wallet Address */}
+              {withdrawMethod !== 'bank' && (
+                <div>
                 <label className="block text-sm text-gray-400 mb-2">
-                  {withdrawMethod === 'crypto' ? 'Wallet Address' : 'Mobile Number'}
-                </label>
-                <input
-                  type="text"
-                  value={accountNumber}
-                  onChange={(e) => setAccountNumber(e.target.value)}
-                  placeholder={withdrawMethod === 'crypto' ? 'Enter wallet address' : getWithdrawMethodInfo().placeholder}
-                  className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border-2 border-gray-600 focus:border-gold focus:outline-none"
-                />
-                {withdrawMethod === 'crypto' && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Make sure to double-check the wallet address. Incorrect addresses may result in permanent loss.
-                  </p>
-                )}
-              </div>
-            )}
+                    {withdrawMethod === 'crypto' ? 'Wallet Address' : 'Mobile Number'}
+                  </label>
+                  <input
+                    type="text"
+                    value={accountNumber}
+                    onChange={(e) => setAccountNumber(e.target.value)}
+                    placeholder={withdrawMethod === 'crypto' ? 'Enter wallet address' : getWithdrawMethodInfo().placeholder}
+                    className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border-2 border-gray-600 focus:border-gold focus:outline-none"
+                  />
+                  {withdrawMethod === 'crypto' && (
+                    <p className="text-xs text-gray-500 mt-1">
+                      Make sure to double-check the wallet address. Incorrect addresses may result in permanent loss.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
-        </div>
-      </>
+        </>
 
       {/* Amount Input */}
       <div className="glass p-5 mb-6 border border-white/10">
@@ -1545,23 +1492,23 @@ export default function Wallet() {
         onClick={handleWithdraw}
         disabled={
           isProcessing || 
-          !amount || 
-          parseFloat(amount) < getWithdrawMethodInfo().minAmount ||
+            !amount || 
+            parseFloat(amount) < getWithdrawMethodInfo().minAmount ||
           parseFloat(amount) > balance ||
-          (withdrawMethod === 'bank' && (!selectedBank || !accountName || !accountNumber)) ||
-          (withdrawMethod === 'crypto' && (!selectedCrypto || !accountNumber)) ||
-          (withdrawMethod !== 'bank' && withdrawMethod !== 'crypto' && !accountNumber)
+            (withdrawMethod === 'bank' && (!selectedBank || !accountName || !accountNumber)) ||
+            (withdrawMethod === 'crypto' && (!selectedCrypto || !accountNumber)) ||
+            (withdrawMethod !== 'bank' && withdrawMethod !== 'crypto' && !accountNumber)
         }
         className={`w-full py-4 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105 shadow-lg ${
           isProcessing || 
-          !amount || 
-          parseFloat(amount) < getWithdrawMethodInfo().minAmount ||
+            !amount || 
+            parseFloat(amount) < getWithdrawMethodInfo().minAmount ||
           parseFloat(amount) > balance ||
-          (withdrawMethod === 'bank' && (!selectedBank || !accountName || !accountNumber)) ||
-          (withdrawMethod === 'crypto' && (!selectedCrypto || !accountNumber)) ||
-          (withdrawMethod !== 'bank' && withdrawMethod !== 'crypto' && !accountNumber)
+            (withdrawMethod === 'bank' && (!selectedBank || !accountName || !accountNumber)) ||
+            (withdrawMethod === 'crypto' && (!selectedCrypto || !accountNumber)) ||
+            (withdrawMethod !== 'bank' && withdrawMethod !== 'crypto' && !accountNumber)
             ? 'bg-gray-600 text-gray-400 cursor-not-allowed'
-            : 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white'
+              : 'bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white'
         }`}
       >
         {isProcessing ? 'Processing...' : 

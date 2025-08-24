@@ -1,9 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Settings, DollarSign, Gift, Target, Save, Plus, Edit, Trash2, X, Users, Activity, TrendingUp, Bot } from 'lucide-react';
+import { Settings, DollarSign, Gift, Target, Save, Plus, Edit, Trash2, X, Users, Activity, TrendingUp } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { motion } from 'framer-motion';
-import BotConfiguration from '../../components/BotConfiguration';
-import useSystemSettings from '../../hooks/useSystemSettings';
 
 interface PaymentConfig {
   id: string;
@@ -27,28 +25,18 @@ interface SystemSetting {
   setting_key: string;
   setting_value: string;
   description: string;
-  created_at: string;
-  updated_at: string;
 }
 
 export default function AdminSettings() {
   const [paymentConfigs, setPaymentConfigs] = useState<PaymentConfig[]>([]);
   const [referralConfigs, setReferralConfigs] = useState<ReferralConfig[]>([]);
+  const [systemSettings, setSystemSettings] = useState<SystemSetting[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('payment');
   const [showAddPayment, setShowAddPayment] = useState(false);
   const [showAddReferral, setShowAddReferral] = useState(false);
-  const [showAddSystemSetting, setShowAddSystemSetting] = useState(false);
   const [editingPayment, setEditingPayment] = useState<PaymentConfig | null>(null);
   const [editingReferral, setEditingReferral] = useState<ReferralConfig | null>(null);
-  const [editingSystemSetting, setEditingSystemSetting] = useState<SystemSetting | null>(null);
-
-  // Use system settings hook
-  const { 
-    settings: systemSettings, 
-    loading: settingsLoading, 
-    refreshSettings: refreshSystemSettings 
-  } = useSystemSettings();
 
   const [paymentForm, setPaymentForm] = useState({
     task_type: 'daily_checkin',
@@ -63,12 +51,6 @@ export default function AdminSettings() {
     bonus_amount: 100,
     xp_bonus: 20,
     is_active: true
-  });
-
-  const [systemSettingForm, setSystemSettingForm] = useState({
-    setting_key: '',
-    setting_value: '',
-    description: ''
   });
 
   useEffect(() => {
@@ -94,6 +76,14 @@ export default function AdminSettings() {
         .order('level', { ascending: true });
 
       if (!referralsError) setReferralConfigs(referrals || []);
+
+      // Load system settings
+      const { data: settings, error: settingsError } = await supabase
+        .from('system_settings')
+        .select('*')
+        .order('updated_at', { ascending: false });
+
+      if (!settingsError) setSystemSettings(settings || []);
 
     } catch (error) {
       console.error('Error loading configurations:', error);
@@ -220,136 +210,6 @@ export default function AdminSettings() {
     }
   };
 
-  // System Settings Handlers
-  const handleAddSystemSetting = async (e: React.FormEvent) => {
-    e.preventDefault();
-    try {
-      const { data, error } = await supabase
-        .from('system_settings')
-        .insert([{
-          ...systemSettingForm,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        }])
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      refreshSystemSettings(); // Refresh settings after adding
-      setShowAddSystemSetting(false);
-      resetSystemSettingForm();
-    } catch (error) {
-      console.error('Error adding system setting:', error);
-    }
-  };
-
-  const handleEditSystemSetting = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!editingSystemSetting) return;
-
-    try {
-      const { data, error } = await supabase
-        .from('system_settings')
-        .update({
-          ...systemSettingForm,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', editingSystemSetting.id)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      refreshSystemSettings(); // Refresh settings after updating
-      setEditingSystemSetting(null);
-      resetSystemSettingForm();
-    } catch (error) {
-      console.error('Error updating system setting:', error);
-    }
-  };
-
-  const handleDeleteSystemSetting = async (settingId: string) => {
-    if (!confirm('Are you sure you want to delete this system setting?')) return;
-
-    try {
-      const { error } = await supabase
-        .from('system_settings')
-        .delete()
-        .eq('id', settingId);
-
-      if (error) throw error;
-
-      refreshSystemSettings(); // Refresh settings after deleting
-    } catch (error) {
-      console.error('Error deleting system setting:', error);
-    }
-  };
-
-  // Create sample system settings
-  const createSampleSettings = async () => {
-    try {
-      const sampleSettings = [
-        {
-          setting_key: 'app_name',
-          setting_value: 'BT Community',
-          description: 'Application name displayed throughout the app'
-        },
-        {
-          setting_key: 'app_version',
-          setting_value: '1.0.0',
-          description: 'Current application version'
-        },
-        {
-          setting_key: 'maintenance_mode',
-          setting_value: 'false',
-          description: 'Enable/disable maintenance mode for the app'
-        },
-        {
-          setting_key: 'max_referrals_per_user',
-          setting_value: '100',
-          description: 'Maximum number of referrals a user can have'
-        },
-        {
-          setting_key: 'min_withdrawal_amount',
-          setting_value: '100',
-          description: 'Minimum withdrawal amount in BDT'
-        },
-        {
-          setting_key: 'referral_reward_amount',
-          setting_value: '50',
-          description: 'Default reward amount for each referral in BDT'
-        },
-        {
-          setting_key: 'daily_task_limit',
-          setting_value: '10',
-          description: 'Maximum number of daily tasks a user can complete'
-        },
-        {
-          setting_key: 'auto_approval_enabled',
-          setting_value: 'false',
-          description: 'Enable automatic approval for certain tasks'
-        }
-      ];
-
-      const { error } = await supabase
-        .from('system_settings')
-        .insert(sampleSettings.map(setting => ({
-          ...setting,
-          created_at: new Date().toISOString(),
-          updated_at: new Date().toISOString()
-        })));
-
-      if (error) throw error;
-
-      refreshSystemSettings();
-      alert('Sample system settings created successfully!');
-    } catch (error) {
-      console.error('Error creating sample settings:', error);
-      alert('Failed to create sample settings');
-    }
-  };
-
   const resetPaymentForm = () => {
     setPaymentForm({
       task_type: 'daily_checkin',
@@ -366,14 +226,6 @@ export default function AdminSettings() {
       bonus_amount: 100,
       xp_bonus: 20,
       is_active: true
-    });
-  };
-
-  const resetSystemSettingForm = () => {
-    setSystemSettingForm({
-      setting_key: '',
-      setting_value: '',
-      description: ''
     });
   };
 
@@ -398,22 +250,11 @@ export default function AdminSettings() {
     });
   };
 
-  const startEditingSystemSetting = (setting: SystemSetting) => {
-    setEditingSystemSetting(setting);
-    setSystemSettingForm({
-      setting_key: setting.setting_key,
-      setting_value: setting.setting_value,
-      description: setting.description
-    });
-  };
-
   const cancelEditing = () => {
     setEditingPayment(null);
     setEditingReferral(null);
-    setEditingSystemSetting(null);
     resetPaymentForm();
     resetReferralForm();
-    resetSystemSettingForm();
   };
 
   const formatCurrency = (amount: number) => {
@@ -575,17 +416,6 @@ export default function AdminSettings() {
             >
               <Settings className="w-4 h-4 inline mr-2" />
               System Settings
-            </button>
-            <button
-              onClick={() => setActiveTab('bot')}
-              className={`flex-1 px-6 py-4 text-sm font-medium transition-colors duration-200 ${
-                activeTab === 'bot'
-                  ? 'text-gold border-b-2 border-gold bg-gold/10'
-                  : 'text-gray-400 hover:text-white hover:bg-gray-800/50'
-              }`}
-            >
-              <Bot className="w-4 h-4 inline mr-2" />
-              Bot Configuration
             </button>
           </div>
 
@@ -764,97 +594,25 @@ export default function AdminSettings() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3 }}
               >
-                <div className="flex items-center justify-between mb-6">
-                  <h2 className="text-xl font-bold text-white">System Settings</h2>
-                  <div className="flex gap-3">
-                    <button
-                      onClick={createSampleSettings}
-                      className="px-4 py-2 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg font-semibold hover:scale-105 transition-all duration-300"
+                <h2 className="text-xl font-bold text-white mb-6">System Settings</h2>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {systemSettings.map((setting, index) => (
+                    <motion.div
+                      key={setting.id}
+                      initial={{ opacity: 0, y: 20 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ duration: 0.3, delay: index * 0.1 }}
+                      className="glass p-6 border border-white/10 rounded-xl"
                     >
-                      <Plus className="w-4 h-4 inline mr-2" />
-                      Create Sample Settings
-                    </button>
-                    <button
-                      onClick={() => setShowAddSystemSetting(true)}
-                      className="px-4 py-2 bg-gradient-to-r from-gold to-yellow-500 text-navy rounded-lg font-semibold hover:scale-105 transition-all duration-300"
-                    >
-                      <Plus className="w-4 h-4 inline mr-2" />
-                      Add System Setting
-                    </button>
-                  </div>
-                </div>
-
-                {settingsLoading ? (
-                  <div className="text-center py-12">
-                    <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold mx-auto mb-4"></div>
-                    <p className="text-gray-400">Loading system settings...</p>
-                  </div>
-                ) : (
-                  <>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {systemSettings.map((setting, index) => (
-                        <motion.div
-                          key={setting.id}
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ duration: 0.3, delay: index * 0.1 }}
-                          className="glass p-6 border border-white/10 rounded-xl"
-                        >
-                          <div className="flex items-center justify-between mb-4">
-                            <h3 className="text-lg font-semibold text-white">{setting.setting_key}</h3>
-                            <div className="flex items-center gap-2">
-                              <button
-                                onClick={() => startEditingSystemSetting(setting)}
-                                className="p-2 text-yellow-400 hover:text-yellow-300 hover:bg-yellow-500/10 rounded-lg transition-all duration-200"
-                                title="Edit Setting"
-                              >
-                                <Edit className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => handleDeleteSystemSetting(setting.id)}
-                                className="p-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-all duration-200"
-                                title="Delete Setting"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </div>
-                          <p className="text-gray-300 mb-3">{setting.description}</p>
-                          <div className="text-sm font-medium text-gold break-all">{setting.setting_value}</div>
-                          <div className="text-xs text-gray-500 mt-2">
-                            Last updated: {new Date(setting.updated_at).toLocaleDateString()}
-                          </div>
-                        </motion.div>
-                      ))}
-                    </div>
-
-                    {systemSettings.length === 0 && (
-                      <div className="text-center py-12">
-                        <Settings className="w-16 h-16 text-gray-500 mx-auto mb-4" />
-                        <h3 className="text-lg font-medium text-gray-400 mb-2">No System Settings</h3>
-                        <p className="text-gray-500 mb-4">Add your first system setting to get started.</p>
-                        <button
-                          onClick={createSampleSettings}
-                          className="px-6 py-3 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg font-semibold hover:scale-105 transition-all duration-300"
-                        >
-                          <Plus className="w-4 h-4 inline mr-2" />
-                          Create Sample Settings
-                        </button>
+                      <div className="flex items-center justify-between mb-4">
+                        <h3 className="text-lg font-semibold text-white">{setting.setting_key}</h3>
+                        <span className="text-xs text-gray-400">System Setting</span>
                       </div>
-                    )}
-                  </>
-                )}
-              </motion.div>
-            )}
-
-            {/* Bot Configuration Tab */}
-            {activeTab === 'bot' && (
-              <motion.div
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.3 }}
-              >
-                <BotConfiguration />
+                      <p className="text-gray-300 mb-3">{setting.description}</p>
+                      <div className="text-sm font-medium text-gold">{setting.setting_value}</div>
+                    </motion.div>
+                  ))}
+                </div>
               </motion.div>
             )}
           </div>
@@ -1046,89 +804,6 @@ export default function AdminSettings() {
                   <button
                     type="button"
                     onClick={editingReferral ? cancelEditing : () => setShowAddReferral(false)}
-                    className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-all duration-300"
-                  >
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        )}
-
-        {/* Add/Edit System Setting Modal */}
-        {(showAddSystemSetting || editingSystemSetting) && (
-          <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-            <div className="glass p-8 border border-white/10 rounded-xl w-full max-w-md">
-              <div className="flex items-center justify-between mb-6">
-                <h3 className="text-xl font-bold text-white">
-                  {editingSystemSetting ? 'Edit System Setting' : 'Add System Setting'}
-                </h3>
-                <button
-                  onClick={editingSystemSetting ? cancelEditing : () => setShowAddSystemSetting(false)}
-                  className="text-gray-400 hover:text-white transition-colors duration-200"
-                >
-                  <X className="w-6 h-6" />
-                </button>
-              </div>
-
-              <form onSubmit={editingSystemSetting ? handleEditSystemSetting : handleAddSystemSetting} className="space-y-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Setting Key</label>
-                  <input
-                    type="text"
-                    value={systemSettingForm.setting_key}
-                    onChange={(e) => setSystemSettingForm({ ...systemSettingForm, setting_key: e.target.value })}
-                    placeholder="e.g., app_name, max_referrals, maintenance_mode"
-                    className="w-full px-3 py-2 bg-gray-800/50 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-gold focus:border-gold"
-                    required
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Unique identifier for the setting (use underscores for spaces)
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Setting Value</label>
-                  <textarea
-                    value={systemSettingForm.setting_value}
-                    onChange={(e) => setSystemSettingForm({ ...systemSettingForm, setting_value: e.target.value })}
-                    placeholder="Enter the value for this setting"
-                    rows={3}
-                    className="w-full px-3 py-2 bg-gray-800/50 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-gold focus:border-gold"
-                    required
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Can be text, number, JSON, or any configuration value
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-sm font-medium text-gray-300 mb-2">Description</label>
-                  <textarea
-                    value={systemSettingForm.description}
-                    onChange={(e) => setSystemSettingForm({ ...systemSettingForm, description: e.target.value })}
-                    placeholder="Explain what this setting controls"
-                    rows={2}
-                    className="w-full px-3 py-2 bg-gray-800/50 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-gold focus:border-gold"
-                    required
-                  />
-                  <p className="text-xs text-gray-500 mt-1">
-                    Help other admins understand what this setting does
-                  </p>
-                </div>
-
-                <div className="flex gap-3 pt-4">
-                  <button
-                    type="submit"
-                    className="flex-1 px-4 py-2 bg-gradient-to-r from-gold to-yellow-500 text-navy rounded-lg font-semibold hover:scale-105 transition-all duration-300"
-                  >
-                    <Save className="w-4 h-4 inline mr-2" />
-                    {editingSystemSetting ? 'Update Setting' : 'Create Setting'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={editingSystemSetting ? cancelEditing : () => setShowAddSystemSetting(false)}
                     className="px-4 py-2 bg-gray-700 text-white rounded-lg hover:bg-gray-600 transition-all duration-300"
                   >
                     Cancel

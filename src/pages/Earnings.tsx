@@ -4,6 +4,7 @@ import { useUserStore } from '../store/userStore';
 import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
+import EarningsAnalytics from '../components/EarningsAnalytics';
 
 interface Earning {
   id: string;
@@ -14,6 +15,14 @@ interface Earning {
   created_at: string;
 }
 
+interface UserStats {
+  total_earnings: number;
+  total_referrals: number;
+  balance: number;
+  level: number;
+  experience_points: number;
+}
+
 export default function Earnings() {
   const { balance, stats, addNotification, telegramId } = useUserStore();
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -22,27 +31,8 @@ export default function Earnings() {
   const [isLive, setIsLive] = useState(true);
   const [earningsHistory, setEarningsHistory] = useState<any[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-
-  // Create balances object from existing data with safe fallbacks
-  const balances = {
-    task: stats?.todayEarnings || 0,
-    referral: (stats?.referralsCount || 0) * 50, // Assuming 50 per referral
-    total: balance || 0
-  };
-
-  // Safe access to balances with fallbacks
-  const totalEarnings = (balances?.task || 0) + (balances?.referral || 0);
-  const monthlyEarnings = Math.floor(totalEarnings * 0.8); // Calculate based on actual data
-
-  // Check if data is loaded
-  const isDataLoaded = stats && balance !== undefined;
-
-  // Set loading to false when data is loaded
-  useEffect(() => {
-    if (isDataLoaded) {
-      setIsLoading(false);
-    }
-  }, [isDataLoaded]);
+  const [userStats, setUserStats] = useState<UserStats | null>(null);
+  const [lifetimeEarnings, setLifetimeEarnings] = useState(0);
 
   // Real-time updates hook
   const { isUpdating, forceUpdate } = useRealTimeUpdates({
@@ -62,7 +52,8 @@ export default function Earnings() {
     setIsRefreshing(true);
     try {
       await forceUpdate();
-      loadEarningsData();
+      await loadEarningsData();
+      await loadUserStats();
       setLastUpdate(new Date());
       addNotification({
         type: 'success',
@@ -87,46 +78,124 @@ export default function Earnings() {
     }
   };
 
+  // Load user stats from database
+  const loadUserStats = async () => {
+    if (!telegramId) return;
+
+    try {
+      // Use the user_earnings_summary view for better performance
+      const { data: userData, error: userError } = await supabase
+        .from('user_earnings_summary')
+        .select('*')
+        .eq('telegram_id', telegramId)
+        .single();
+
+      if (userError) {
+        // Fallback to direct users table query if view doesn't exist
+        const { data: fallbackData, error: fallbackError } = await supabase
+          .from('users')
+          .select('total_earnings, total_referrals, balance, level, experience_points')
+          .eq('telegram_id', telegramId)
+          .single();
+
+        if (fallbackError) throw fallbackError;
+
+        if (fallbackData) {
+          setUserStats(fallbackData);
+          setLifetimeEarnings(fallbackData.total_earnings || 0);
+        }
+      } else if (userData) {
+        // Use data from the view
+        setUserStats({
+          total_earnings: userData.total_earnings || 0,
+          total_referrals: userData.total_referrals || 0,
+          balance: userData.balance || 0,
+          level: userData.level || 1,
+          experience_points: userData.experience_points || 0
+        });
+        setLifetimeEarnings(userData.total_earnings || 0);
+      }
+    } catch (error) {
+      console.error('Error loading user stats:', error);
+    }
+  };
+
   const loadEarningsData = async () => {
     if (!telegramId) return;
 
     try {
-      // Load earnings from database
-      const { data: earnings, error: earningsError } = await supabase
-        .from('earnings')
+      // Try to use the recent_earnings view first
+      const { data: recentEarningsData, error: recentError } = await supabase
+        .from('recent_earnings')
         .select('*')
         .eq('user_id', telegramId)
         .order('created_at', { ascending: false })
         .limit(50);
 
-      if (earningsError) throw earningsError;
+      if (recentError) {
+        // Fallback to direct earnings table query
+        const { data: earnings, error: earningsError } = await supabase
+          .from('earnings')
+          .select('*')
+          .eq('user_id', telegramId)
+          .order('created_at', { ascending: false })
+          .limit(50);
 
-      // Transform earnings data
-      const earningsHistory = earnings?.map((earning: any) => ({
-        id: earning.id,
-        type: earning.type || 'task',
-        amount: earning.amount || 0,
-        time: formatTimeAgo(new Date(earning.created_at)),
-        isLive: false,
-        created_at: earning.created_at
-      })) || [];
+        if (earningsError) throw earningsError;
 
-      setEarningsHistory(earningsHistory);
+        // Transform earnings data
+        const earningsHistory = earnings?.map((earning: any) => ({
+          id: earning.id,
+          type: earning.source || 'task',
+          amount: earning.amount || 0,
+          time: formatTimeAgo(new Date(earning.created_at)),
+          isLive: false,
+          created_at: earning.created_at
+        })) || [];
 
-      // Load live earnings (recent earnings in last hour)
-      const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
-      const recentEarnings = earnings?.filter((e: any) => 
-        new Date(e.created_at) >= oneHourAgo
-      ).map((earning: any) => ({
-        id: earning.id,
-        type: earning.type || 'task',
-        amount: earning.amount || 0,
-        time: formatTimeAgo(new Date(earning.created_at)),
-        isLive: true,
-        created_at: earning.created_at
-      })) || [];
+        setEarningsHistory(earningsHistory);
 
-      setLiveEarnings(recentEarnings);
+        // Load live earnings (recent earnings in last hour)
+        const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+        const recentEarnings = earnings?.filter((e: any) => 
+          new Date(e.created_at) >= oneHourAgo
+        ).map((earning: any) => ({
+          id: earning.id,
+          type: earning.source || 'task',
+          amount: earning.amount || 0,
+          time: formatTimeAgo(new Date(earning.created_at)),
+          isLive: true,
+          created_at: earning.created_at
+        })) || [];
+
+        setLiveEarnings(recentEarnings);
+      } else {
+        // Use data from the view
+        const earningsHistory = recentEarningsData?.map((earning: any) => ({
+          id: earning.id,
+          type: earning.source || 'task',
+          amount: earning.amount || 0,
+          time: formatTimeAgo(new Date(earning.created_at)),
+          isLive: earning.status === 'LIVE',
+          created_at: earning.created_at
+        })) || [];
+
+        setEarningsHistory(earningsHistory);
+
+        // Filter live earnings from view data
+        const liveEarnings = recentEarningsData?.filter((e: any) => 
+          e.status === 'LIVE'
+        ).map((earning: any) => ({
+          id: earning.id,
+          type: earning.source || 'task',
+          amount: earning.amount || 0,
+          time: formatTimeAgo(new Date(earning.created_at)),
+          isLive: true,
+          created_at: earning.created_at
+        })) || [];
+
+        setLiveEarnings(liveEarnings);
+      }
 
       setLastUpdate(new Date());
 
@@ -147,7 +216,14 @@ export default function Earnings() {
 
   // Load earnings data on component mount
   useEffect(() => {
-    loadEarningsData();
+    const loadData = async () => {
+      await loadUserStats();
+      await loadEarningsData();
+    };
+    
+    if (telegramId) {
+      loadData();
+    }
   }, [telegramId]);
 
   // Auto-refresh earnings data
@@ -164,6 +240,34 @@ export default function Earnings() {
   const formatCurrency = (amount: number) => {
     return `৳${amount.toLocaleString('en-IN')}`;
   };
+
+  // Calculate earnings breakdown
+  const getEarningsBreakdown = () => {
+    if (!userStats) return { task: 0, referral: 0, total: 0 };
+
+    // Calculate task earnings (total earnings minus referral bonuses)
+    const referralBonus = (userStats.total_referrals || 0) * 50; // Assuming 50 per referral
+    const taskEarnings = Math.max(0, (userStats.total_earnings || 0) - referralBonus);
+
+    return {
+      task: taskEarnings,
+      referral: referralBonus,
+      total: userStats.total_earnings || 0
+    };
+  };
+
+  const earningsBreakdown = getEarningsBreakdown();
+  const monthlyEarnings = Math.floor(earningsBreakdown.total * 0.8); // Calculate based on actual data
+
+  // Check if data is loaded
+  const isDataLoaded = userStats !== null && balance !== undefined;
+
+  // Set loading to false when data is loaded
+  useEffect(() => {
+    if (isDataLoaded) {
+      setIsLoading(false);
+    }
+  }, [isDataLoaded]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-navy via-navy to-gray-900 text-white p-4 pb-24">
@@ -299,7 +403,7 @@ export default function Earnings() {
             <div className="flex items-center justify-center mb-4">
               <div className="flex items-center gap-2">
                 <TrendingUp className="w-8 h-8 text-gold mr-3" />
-                <h2 className="text-xl font-semibold">Total Earnings</h2>
+                <h2 className="text-xl font-semibold">Total Lifetime Earnings</h2>
                 {liveEarnings.length > 0 && (
                   <div className="flex items-center gap-1 px-2 py-1 bg-green-500/20 rounded-full border border-green-500/30">
                     <div className="w-2 h-2 bg-green-400 rounded-full animate-pulse"></div>
@@ -311,14 +415,15 @@ export default function Earnings() {
             <div className="text-center">
               <motion.p 
                 className="text-4xl font-bold text-gold"
-                key={totalEarnings}
+                key={earningsBreakdown.total}
                 initial={{ scale: 1.2, color: '#fbbf24' }}
                 animate={{ scale: 1, color: '#fbbf24' }}
                 transition={{ duration: 0.3 }}
               >
-                {formatCurrency(totalEarnings)}
+                {formatCurrency(earningsBreakdown.total)}
               </motion.p>
               <p className="text-gray-400 text-sm">Lifetime earnings in real money</p>
+              <p className="text-xs text-gray-500 mt-1">From database: {userStats?.total_earnings || 0} BDT</p>
             </div>
           </motion.div>
 
@@ -329,14 +434,14 @@ export default function Earnings() {
                 <span className="text-white text-sm">📋</span>
               </div>
               <p className="text-sm text-gray-400">Task Earnings</p>
-              <p className="text-lg font-semibold">{formatCurrency(balances?.task || 0)}</p>
+              <p className="text-lg font-semibold">{formatCurrency(earningsBreakdown.task)}</p>
             </div>
             <div className="glass p-4 text-center">
               <div className="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center mx-auto mb-2">
                 <span className="text-white text-sm">👥</span>
               </div>
               <p className="text-sm text-gray-400">Referral Bonus</p>
-              <p className="text-lg font-semibold">{formatCurrency(balances?.referral || 0)}</p>
+              <p className="text-lg font-semibold">{formatCurrency(earningsBreakdown.referral)}</p>
             </div>
           </div>
 
@@ -365,11 +470,15 @@ export default function Earnings() {
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Total Referrals</span>
-                <span className="font-semibold">{stats?.referralsCount || 0}</span>
+                <span className="font-semibold">{userStats?.total_referrals || 0}</span>
               </div>
               <div className="flex justify-between items-center">
                 <span className="text-gray-400">Success Rate</span>
                 <span className="font-semibold text-green-400">95%</span>
+              </div>
+              <div className="flex justify-between items-center">
+                <span className="text-gray-400">Current Level</span>
+                <span className="font-semibold text-gold">{userStats?.level || 1}</span>
               </div>
             </div>
           </div>
@@ -391,11 +500,11 @@ export default function Earnings() {
               <div className="w-full bg-gray-700 rounded-full h-2">
                 <div 
                   className="bg-gold h-2 rounded-full transition-all duration-300"
-                  style={{ width: `${Math.min((totalEarnings / 1000) * 100, 100)}%` }}
+                  style={{ width: `${Math.min((earningsBreakdown.total / 1000) * 100, 100)}%` }}
                 ></div>
               </div>
               <p className="text-xs text-gray-400 text-center">
-                {formatCurrency(totalEarnings)}/৳1000 BDT
+                {formatCurrency(earningsBreakdown.total)}/৳1000 BDT
               </p>
             </div>
           </div>
@@ -414,6 +523,11 @@ export default function Earnings() {
                 <span className="text-gold">📊</span>
               </div>
             </button>
+          </div>
+
+          {/* Earnings Analytics */}
+          <div className="mb-6">
+            <EarningsAnalytics telegramId={telegramId || ''} />
           </div>
 
           {/* Live Earnings History */}

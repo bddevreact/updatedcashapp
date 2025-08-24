@@ -357,6 +357,25 @@ export default function AdminTasks() {
           return;
       }
 
+      // Get current admin user ID
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        alert('Admin authentication required. Please log in again.');
+        return;
+      }
+
+      // Get admin user record from admin_users table
+      const { data: adminUser, error: adminError } = await supabase
+        .from('admin_users')
+        .select('user_id')
+        .eq('user_id', user.id)
+        .single();
+
+      if (adminError || !adminUser) {
+        alert('Admin privileges not found. Please contact system administrator.');
+        return;
+      }
+
       // Show confirmation dialog
       const confirmMessage = status === 'verified' 
         ? `Are you sure you want to verify this UID?\n\nUser: ${submission.user?.first_name || 'Unknown'}\nTask: ${submission.task_template?.title || 'Unknown'}\nUID: ${submission.uid_submitted}\nReward: ৳${submission.reward_amount}`
@@ -372,7 +391,7 @@ export default function AdminTasks() {
         .update({
           status: status,
           admin_notes: adminNotes || '',
-          verified_by: 'admin', // In real app, use actual admin ID
+          verified_by: adminUser.user_id, // Use proper admin user ID
           verified_at: new Date().toISOString()
         })
         .eq('id', submissionId);

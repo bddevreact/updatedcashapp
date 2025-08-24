@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Share2, Copy, TrendingUp, Award, Target, Calendar, DollarSign, AlertTriangle, CheckCircle, Clock, RefreshCw, Eye, Shield, Bot, UserCheck, UserX, MessageCircle, Settings, Zap, Activity, Info } from 'lucide-react';
+import { Users, Share2, Copy, TrendingUp, Award, Target, Calendar, DollarSign, AlertTriangle, CheckCircle, Clock, RefreshCw, Eye, Shield, Bot, UserCheck, UserX, MessageCircle, Settings, Zap, Activity, Info, BarChart3 } from 'lucide-react';
 import { useUserStore } from '../store/userStore';
 import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
+import ReferralDashboard from '../components/ReferralDashboard';
 
 interface GroupMember {
   id: string;
@@ -38,7 +39,7 @@ export default function Referrals() {
   const { stats, addNotification } = useUserStore();
   const [copied, setCopied] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'analytics' | 'settings'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'analytics' | 'enhanced' | 'settings'>('overview');
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [liveMemberCount, setLiveMemberCount] = useState(156);
   const [isLive, setIsLive] = useState(true);
@@ -678,6 +679,9 @@ export default function Referrals() {
     saveSettings(defaultSettings);
   };
 
+  // Add new state for enhanced referral tracking
+  const [showEnhancedDashboard, setShowEnhancedDashboard] = useState(false);
+
   return (
     <div className="min-h-screen bg-gradient-to-br from-navy via-navy to-gray-900 text-white p-4 pb-24">
       {/* Dynamic Header */}
@@ -768,6 +772,7 @@ export default function Referrals() {
             { id: 'overview', label: 'Overview', icon: TrendingUp },
             { id: 'members', label: 'Members', icon: Users },
             { id: 'analytics', label: 'Analytics', icon: Target },
+            { id: 'enhanced', label: 'Enhanced', icon: BarChart3 },
             { id: 'settings', label: 'Settings', icon: Settings }
           ].map((tab) => (
             <button
@@ -1345,6 +1350,139 @@ export default function Referrals() {
         </>
       )}
 
+      {/* Enhanced Tab - New Referral Tracking System */}
+      {activeTab === 'enhanced' && (
+        <>
+          {/* Enhanced Referral Dashboard */}
+          <div className="mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-gold" />
+                Enhanced Referral Tracking
+              </h3>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setShowEnhancedDashboard(!showEnhancedDashboard)}
+                  className={`px-4 py-2 rounded-lg font-semibold transition-all duration-300 ${
+                    showEnhancedDashboard 
+                      ? 'bg-blue-500 hover:bg-blue-600 text-white' 
+                      : 'bg-gold hover:bg-yellow-500 text-navy'
+                  }`}
+                >
+                  {showEnhancedDashboard ? 'Hide Dashboard' : 'Show Enhanced Dashboard'}
+                </button>
+              </div>
+            </div>
+
+            {showEnhancedDashboard && (
+              <motion.div
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.5 }}
+                className="glass p-4 border border-white/10"
+              >
+                <ReferralDashboard telegramId={telegramId || ''} />
+              </motion.div>
+            )}
+
+            {/* Enhanced Features Info */}
+            <div className="glass p-4 border border-blue-500/30 bg-blue-500/10">
+              <h4 className="text-blue-400 font-semibold mb-3 flex items-center gap-2">
+                <Info className="w-4 h-4" />
+                New Enhanced Features
+              </h4>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm text-blue-300">
+                <div>
+                  <h5 className="font-medium text-blue-200 mb-2">🎯 Advanced Analytics</h5>
+                  <ul className="space-y-1 text-xs">
+                    <li>• Real-time referral performance tracking</li>
+                    <li>• Group-based referral analysis</li>
+                    <li>• Conversion rate optimization</li>
+                    <li>• Trend analysis and predictions</li>
+                  </ul>
+                </div>
+                <div>
+                  <h5 className="font-medium text-blue-200 mb-2">📊 Performance Metrics</h5>
+                  <ul className="space-y-1 text-xs">
+                    <li>• Individual referral code tracking</li>
+                    <li>• Group membership verification</li>
+                    <li>• Fraud detection and prevention</li>
+                    <li>• Automated reporting system</li>
+                  </ul>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Actions for Enhanced Features */}
+          <div className="glass p-4 mb-6 border border-white/10">
+            <h4 className="text-md font-semibold mb-3 flex items-center gap-2">
+              <Zap className="w-4 h-4 text-gold" />
+              Enhanced Referral Actions
+            </h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <button 
+                onClick={() => setShowEnhancedDashboard(true)}
+                className="p-3 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors"
+              >
+                <div className="text-center">
+                  <div className="text-2xl mb-1">📊</div>
+                  <div className="text-sm font-medium">View Dashboard</div>
+                </div>
+              </button>
+              <button className="p-3 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors">
+                <div className="text-center">
+                  <div className="text-2xl mb-1">🎯</div>
+                  <div className="text-sm font-medium">Track Performance</div>
+                </div>
+              </button>
+              <button className="p-3 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors">
+                <div className="text-center">
+                  <div className="text-2xl mb-1">📈</div>
+                  <div className="text-sm font-medium">Analytics</div>
+                </div>
+              </button>
+              <button className="p-3 bg-orange-500/20 text-orange-400 rounded-lg hover:bg-orange-500/30 transition-colors">
+                <div className="text-center">
+                  <div className="text-2xl mb-1">🔍</div>
+                  <div className="text-sm font-medium">Monitor</div>
+                </div>
+              </button>
+            </div>
+          </div>
+
+          {/* Enhanced Referral Statistics */}
+          <div className="glass p-4 mb-6 border border-white/10">
+            <h4 className="text-md font-semibold mb-3 flex items-center gap-2">
+              <TrendingUp className="w-4 h-4 text-gold" />
+              Enhanced Referral Stats
+            </h4>
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+              <div className="text-center p-3 bg-gray-800/50 rounded-lg">
+                <div className="text-2xl font-bold text-blue-400">0</div>
+                <div className="text-xs text-gray-400">Active Groups</div>
+                <div className="text-xs text-blue-400">Enhanced tracking</div>
+              </div>
+              <div className="text-center p-3 bg-gray-800/50 rounded-lg">
+                <div className="text-2xl font-bold text-green-400">0</div>
+                <div className="text-xs text-gray-400">Referral Codes</div>
+                <div className="text-xs text-green-400">Individual tracking</div>
+              </div>
+              <div className="text-center p-3 bg-gray-800/50 rounded-lg">
+                <div className="text-2xl font-bold text-purple-400">0</div>
+                <div className="text-xs text-gray-400">Conversion Rate</div>
+                <div className="text-xs text-purple-400">Enhanced metrics</div>
+              </div>
+              <div className="text-center p-3 bg-gray-800/50 rounded-lg">
+                <div className="text-2xl font-bold text-orange-400">0</div>
+                <div className="text-xs text-gray-400">Quality Score</div>
+                <div className="text-xs text-orange-400">AI-powered</div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
       {/* Settings Tab */}
       {activeTab === 'settings' && (
         <>
@@ -1665,19 +1803,19 @@ export default function Referrals() {
             <span className="text-blue-400 font-medium">Referral Link Information</span>
           </div>
           <div className="text-xs text-blue-300 space-y-1">
-            {individualReferralConfig.base_url ? (
+                        {individualReferralConfig.base_url ? (
               <>
-                <div>• This is your <strong>personal referral link</strong> with your unique ID</div>
-                <div>• When someone uses this link, you get credit for the referral</div>
-                <div>• You earn <strong>৳{individualReferralConfig.referral_reward}</strong> for each successful referral</div>
-                <div>• Only you can use this link - it's unique to your account</div>
+                <div>• এটি আপনার <strong>ব্যক্তিগত রেফারেল লিংক</strong> আপনার অনন্য আইডি সহ</div>
+                <div>• যখন কেউ এই লিংক ব্যবহার করে, আপনি রেফারেলের জন্য ক্রেডিট পান</div>
+                <div>• প্রতিটি সফল রেফারেলের জন্য আপনি <strong>৳{individualReferralConfig.referral_reward}</strong> আয় করেন</div>
+                <div>• শুধুমাত্র আপনি এই লিংক ব্যবহার করতে পারেন - এটি আপনার অ্যাকাউন্টের জন্য অনন্য</div>
               </>
             ) : (
               <>
-                <div>• This is a <strong>group referral link</strong> for the BT Community</div>
-                <div>• When someone joins using this link, you get credit for the referral</div>
-                <div>• You earn <strong>৳50</strong> for each successful referral</div>
-                <div>• Admin can configure individual referral links for better tracking</div>
+                <div>• এটি একটি <strong>গ্রুপ রেফারেল লিংক</strong> BT কমিউনিটির জন্য</div>
+                <div>• যখন কেউ এই লিংক ব্যবহার করে যোগদান করে, আপনি রেফারেলের জন্য ক্রেডিট পান</div>
+                <div>• প্রতিটি সফল রেফারেলের জন্য আপনি <strong>অনেক আয় করেন</strong> </div>
+                <div>• অ্যাডমিন ব্যক্তিগত রেফারেল লিংক কনফিগার করতে পারেন</div>
               </>
             )}
           </div>

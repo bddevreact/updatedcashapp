@@ -393,27 +393,9 @@ export default function Leaderboard() {
   // State for live updates
   const [isLive, setIsLive] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(new Date());
-  const [totalUsers, setTotalUsers] = useState(0);
-  const [activeUsers, setActiveUsers] = useState(0);
+  const [totalUsers, setTotalUsers] = useState(1000);
+  const [activeUsers, setActiveUsers] = useState(800);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  const [statsLoading, setStatsLoading] = useState(true);
-
-  // Auto-refresh effect
-  useEffect(() => {
-    if (!isLive) return;
-
-    // Initial load
-    loadLeaderboardStats();
-    
-    // Auto-refresh every 30 seconds when live
-    const interval = setInterval(() => {
-      if (isLive) {
-        loadLeaderboardStats();
-      }
-    }, 30000);
-
-    return () => clearInterval(interval);
-  }, [isLive]);
 
   const toggleLive = () => {
     setIsLive(!isLive);
@@ -433,8 +415,6 @@ export default function Leaderboard() {
 
   const loadLeaderboardStats = async () => {
     try {
-      setStatsLoading(true);
-      
       // Load total users count
       const { count: totalUsersCount, error: usersError } = await supabase
         .from('users')
@@ -442,56 +422,21 @@ export default function Leaderboard() {
 
       if (usersError) throw usersError;
 
-      // Try to load active users (users active in last 24 hours)
-      let activeUsersCount = 0;
-      
-      try {
-        // First try with last_active column
-        const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-        const { count: lastActiveCount, error: lastActiveError } = await supabase
-          .from('users')
-          .select('*', { count: 'exact', head: true })
-          .gte('last_active', yesterday.toISOString());
-        
-        if (!lastActiveError) {
-          activeUsersCount = lastActiveCount || 0;
-        } else {
-          // Fallback: use created_at for users created in last 24 hours
-          const { count: recentUsersCount, error: recentError } = await supabase
-            .from('users')
-            .select('*', { count: 'exact', head: true })
-            .gte('created_at', yesterday.toISOString());
-          
-          if (!recentError) {
-            activeUsersCount = recentUsersCount || 0;
-          }
-        }
-      } catch (activeError) {
-        console.warn('Could not determine active users, using total users as fallback:', activeError);
-        // If we can't determine active users, use total users as fallback
-        activeUsersCount = totalUsersCount || 0;
-      }
+      // Load active users (users active in last 24 hours)
+      const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const { count: activeUsersCount, error: activeError } = await supabase
+        .from('users')
+        .select('*', { count: 'exact', head: true })
+        .gte('last_active', yesterday.toISOString());
+
+      if (activeError) throw activeError;
 
       setTotalUsers(totalUsersCount || 0);
-      setActiveUsers(activeUsersCount);
+      setActiveUsers(activeUsersCount || 0);
       setLastUpdate(new Date());
-
-      // Refresh leaderboard data to keep everything in sync
-      if (activeTab === 'referrers') {
-        loadLeaderboardData();
-      } else if (activeTab === 'earners') {
-        loadTopEarners();
-      } else if (activeTab === 'rankings') {
-        loadTimeFilteredData();
-      }
 
     } catch (error) {
       console.error('Error loading leaderboard stats:', error);
-      // Set fallback values if database query fails
-      setTotalUsers(0);
-      setActiveUsers(0);
-    } finally {
-      setStatsLoading(false);
     }
   };
 
@@ -665,27 +610,8 @@ export default function Leaderboard() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5, delay: 0.3 }}
               >
-                {statsLoading ? (
-                  <span className="flex items-center gap-2">
-                    <RefreshCw className="w-3 h-3 animate-spin" />
-                    Loading stats...
-                  </span>
-                ) : (
-                  <span>
-                    {totalUsers.toLocaleString()} total users • {activeUsers.toLocaleString()} active today
-                  </span>
-                )}
+                {totalUsers} total users • {activeUsers} active today
               </motion.p>
-              {isLive && !statsLoading && (
-                <motion.div 
-                  className="flex items-center gap-1 text-blue-400 text-xs"
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                >
-                  <RefreshCw className="w-3 h-3 animate-spin" />
-                  Auto-updating...
-                </motion.div>
-              )}
             </div>
           </div>
           
@@ -720,58 +646,6 @@ export default function Leaderboard() {
             </motion.button>
           </div>
         </div>
-
-        {/* Real-time Stats Summary */}
-        <motion.div 
-          className="glass p-4 mb-6 border border-white/10 bg-gradient-to-r from-blue-500/10 to-purple-500/10"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.4 }}
-        >
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-lg font-semibold flex items-center gap-2">
-              <Users className="w-5 h-5 text-blue-400" />
-              Community Statistics
-            </h3>
-            <div className="flex items-center gap-2">
-              <span className={`w-2 h-2 rounded-full ${isLive ? 'bg-green-400' : 'bg-red-400'}`}></span>
-              <span className={`text-xs ${isLive ? 'text-green-400' : 'text-red-400'}`}>
-                {isLive ? 'Live' : 'Paused'}
-              </span>
-            </div>
-          </div>
-          
-          <div className="grid grid-cols-2 gap-4">
-            <div className="text-center p-3 bg-gray-800/50 rounded-lg">
-              <div className="text-2xl font-bold text-blue-400">
-                {statsLoading ? (
-                  <RefreshCw className="w-6 h-6 animate-spin mx-auto" />
-                ) : (
-                  totalUsers.toLocaleString()
-                )}
-              </div>
-              <div className="text-xs text-gray-400">Total Users</div>
-              <div className="text-xs text-blue-400">Registered</div>
-            </div>
-            <div className="text-center p-3 bg-gray-800/50 rounded-lg">
-              <div className="text-2xl font-bold text-green-400">
-                {statsLoading ? (
-                  <RefreshCw className="w-6 h-6 animate-spin mx-auto" />
-                ) : (
-                  activeUsers.toLocaleString()
-                )}
-              </div>
-              <div className="text-xs text-gray-400">Active Today</div>
-              <div className="text-xs text-green-400">Last 24h</div>
-            </div>
-          </div>
-          
-          <div className="mt-3 text-center">
-            <p className="text-xs text-gray-400">
-              {statsLoading ? 'Fetching latest data...' : `Last updated: ${lastUpdate.toLocaleTimeString()}`}
-            </p>
-          </div>
-        </motion.div>
 
         {/* Earn Real Money Banner */}
         <motion.div 
