@@ -131,7 +131,15 @@ export default function Leaderboard() {
         }
         acc[referrerId].referrals++;
         acc[referrerId].earnings += 50; // 50 BDT per referral
-        acc[referrerId].level = Math.floor(acc[referrerId].referrals / 10) + 1;
+        // New level calculation based on referral system
+        const getLevel = (referrals: number) => {
+          if (referrals >= 50000) return 4;
+          if (referrals >= 10000) return 3;
+          if (referrals >= 2000) return 2;
+          if (referrals >= 500) return 1;
+          return 1;
+        };
+        acc[referrerId].level = getLevel(acc[referrerId].referrals);
         return acc;
       }, {});
 
@@ -503,7 +511,15 @@ export default function Leaderboard() {
         }
         acc[referrerId].referrals++;
         acc[referrerId].earnings += 50; // 50 BDT per referral
-        acc[referrerId].level = Math.floor(acc[referrerId].referrals / 10) + 1;
+        // New level calculation based on referral system
+        const getLevel = (referrals: number) => {
+          if (referrals >= 50000) return 4;
+          if (referrals >= 10000) return 3;
+          if (referrals >= 2000) return 2;
+          if (referrals >= 500) return 1;
+          return 1;
+        };
+        acc[referrerId].level = getLevel(acc[referrerId].referrals);
         return acc;
       }, {});
 
