@@ -18,7 +18,7 @@ export default function LoadingScreen({ onComplete }: Props) {
   const [progress, setProgress] = useState(0);
   const [showContent, setShowContent] = useState(true);
   const [loadingSteps, setLoadingSteps] = useState<LoadingStep[]>([
-    { id: 'init', text: 'Initializing BT Community', description: 'Setting up your account', icon: Network, status: 'pending' },
+            { id: 'init', text: 'Initializing Cash Points', description: 'Setting up your account', icon: Network, status: 'pending' },
     { id: 'user', text: 'Loading User Data', description: 'Fetching your profile', icon: User, status: 'pending' },
     { id: 'wallet', text: 'Connecting Wallet', description: 'Linking your wallet', icon: Wallet, status: 'pending' },
     { id: 'security', text: 'Security Check', description: 'Verifying your account', icon: Shield, status: 'pending' },
@@ -102,7 +102,7 @@ export default function LoadingScreen({ onComplete }: Props) {
         </div>
       </div>
 
-      {/* BT Community Logo */}
+      {/* Cash Points Logo */}
       <div className="text-center mb-8">
         <div className="w-24 h-24 bg-gradient-to-r from-gold to-yellow-500 rounded-full flex items-center justify-center mx-auto mb-4 animate-pulse">
           <div className="w-16 h-16 bg-navy rounded-full flex items-center justify-center">
@@ -115,7 +115,7 @@ export default function LoadingScreen({ onComplete }: Props) {
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.8, ease: "easeOut" }}
         >
-          BT COMMUNITY
+          CASH POINTS
         </motion.div>
       </div>
 

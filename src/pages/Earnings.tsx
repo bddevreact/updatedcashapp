@@ -368,7 +368,7 @@ export default function Earnings() {
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.5 }}
               >
-                BT Community Earnings
+                Cash Points Earnings
               </motion.h1>
               <div className="flex items-center gap-4">
                 <motion.p 

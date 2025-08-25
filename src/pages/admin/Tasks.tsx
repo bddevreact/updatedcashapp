@@ -618,7 +618,7 @@ export default function AdminTasks() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5 }}
           >
-            BT Community
+            Cash Points
           </motion.h1>
         </div>
 
@@ -650,7 +650,7 @@ export default function AdminTasks() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            Manage task templates and monitor completions in BT Community
+            Manage task templates and monitor completions in Cash Points
           </motion.p>
           
           {/* Current Category Summary */}
@@ -848,7 +848,7 @@ export default function AdminTasks() {
                 onClick={() => {
                   setTaskForm({
                     title: 'Join Telegram Channel',
-                    subtitle: 'BT Community Official',
+                    subtitle: 'Cash Points Official',
                     description: 'Join our official Telegram channel for updates and announcements',
                     reward: 200,
                     type: 'social',
@@ -874,7 +874,7 @@ export default function AdminTasks() {
                   setTaskForm({
                     title: 'Refer a Friend',
                     subtitle: 'Earn from referrals',
-                    description: 'Invite friends to join BT Community and earn referral bonuses',
+                    description: 'Invite friends to join Cash Points and earn referral bonuses',
                     reward: 300,
                     type: 'referral',
                     icon: '👥',

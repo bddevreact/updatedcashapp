@@ -26,49 +26,49 @@ interface StatsCardsRowProps {
 }
 
 const StatsCardsRow: React.FC<StatsCardsRowProps> = ({ currentLevel, totalReferrals, nextLevelReferrals }) => {
-  // Referral-based leveling system
+  // New referral-based leveling system
   const getLevelInfo = (level: number) => {
     switch (level) {
       case 1:
         return {
-          referralsNeeded: 50,
-          bonus: '৳100',
-          opportunities: 'Basic Referral Bonus',
+          referralsNeeded: 500,
+          bonus: '৳200',
+          opportunities: 'Level 1 Referral Bonus',
           color: 'text-green-400'
         };
       case 2:
         return {
-          referralsNeeded: 100,
-          bonus: '৳250',
-          opportunities: 'Enhanced Rewards + VIP Access',
+          referralsNeeded: 2000,
+          bonus: '৳500',
+          opportunities: 'Level 2 Referral Bonus',
           color: 'text-blue-400'
         };
       case 3:
         return {
-          referralsNeeded: 200,
-          bonus: '৳500',
-          opportunities: 'Premium Features + Priority Support',
+          referralsNeeded: 10000,
+          bonus: '৳1,500',
+          opportunities: 'Level 3 Referral Bonus',
           color: 'text-purple-400'
         };
       case 4:
         return {
-          referralsNeeded: 500,
-          bonus: '৳1,000',
-          opportunities: 'Elite Status + Exclusive Bonuses',
+          referralsNeeded: 50000,
+          bonus: '৳5,000',
+          opportunities: 'Level 4 Referral Bonus',
           color: 'text-gold'
         };
       case 5:
         return {
-          referralsNeeded: 1000,
-          bonus: '৳2,500',
+          referralsNeeded: 100000,
+          bonus: '৳10,000',
           opportunities: 'Legendary Status + Maximum Benefits',
           color: 'text-red-400'
         };
       default:
         return {
-          referralsNeeded: 50,
-          bonus: '৳100',
-          opportunities: 'Basic Referral Bonus',
+          referralsNeeded: 500,
+          bonus: '৳200',
+          opportunities: 'Level 1 Referral Bonus',
           color: 'text-green-400'
         };
     }

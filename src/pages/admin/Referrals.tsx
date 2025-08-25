@@ -150,7 +150,7 @@ export default function AdminReferrals() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5 }}
           >
-            BT Community
+            Cash Points
           </motion.h1>
         </div>
 
@@ -182,7 +182,7 @@ export default function AdminReferrals() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            Manage and verify referral relationships in BT Community
+            Manage and verify referral relationships in Cash Points
           </motion.p>
 
           {/* View Toggle */}

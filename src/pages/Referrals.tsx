@@ -191,9 +191,18 @@ export default function Referrals() {
         new Date(e.created_at) >= thisMonth
       ).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
 
-      const level = Math.floor(totalMembers / 10) + 1;
-      const nextLevelProgress = totalMembers % 10;
-      const nextLevelTarget = 10;
+      // New level calculation based on referral system
+      const getLevelInfo = (totalMembers: number) => {
+        if (totalMembers >= 50000) return { level: 4, nextTarget: 50000, progress: 100 };
+        if (totalMembers >= 10000) return { level: 3, nextTarget: 10000, progress: Math.min((totalMembers / 10000) * 100, 100) };
+        if (totalMembers >= 2000) return { level: 2, nextTarget: 2000, progress: Math.min((totalMembers / 2000) * 100, 100) };
+        return { level: 1, nextTarget: 500, progress: Math.min((totalMembers / 500) * 100, 100) };
+      };
+      
+      const levelInfo = getLevelInfo(totalMembers);
+      const level = levelInfo.level;
+      const nextLevelProgress = levelInfo.progress;
+      const nextLevelTarget = levelInfo.nextTarget;
 
       setReferralStats({
         totalMembers,
@@ -329,7 +338,7 @@ export default function Referrals() {
 
   // Group-based referral system (fallback if individual system not configured)
   const groupUrl = `https://t.me/BTCommunityGroup`;
-  const referralLink = individualReferralConfig.base_url ? generateIndividualReferralLink() : `https://t.me/share/url?url=${encodeURIComponent(groupUrl)}&text=Join BT Community Group and earn real money in BDT! Use my referral link.`;
+  const referralLink = individualReferralConfig.base_url ? generateIndividualReferralLink() : `https://t.me/share/url?url=${encodeURIComponent(groupUrl)}&text=Join Cash Points Group and earn real money in BDT! Use my referral link.`;
   
   // Mock real-time data (in real app, this would come from WebSocket/API)
   const [referralStats, setReferralStats] = useState<ReferralStats>({
@@ -695,7 +704,7 @@ export default function Referrals() {
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.5 }}
             >
-              BT Community Referrals
+              Cash Points Referrals
             </motion.h1>
             <div className="flex items-center gap-4">
               <motion.p 
@@ -821,7 +830,7 @@ export default function Referrals() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.9 }}
           >
-            Invite friends to join BT Community and earn ৳50 for every verified member!
+            Invite friends to join Cash Points and earn ৳50 for every verified member!
           </motion.p>
         </div>
       </motion.div>

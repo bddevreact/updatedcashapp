@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import Header from '../components/Header';
 import BalanceCard from '../components/BalanceCard';
 import StatsCardsRow from '../components/StatsCards';
+import ReferralLevelsCard from '../components/ReferralLevelsCard';
 import RecentActivity from '../components/RecentActivity';
 import NotificationCenter from '../components/NotificationCenter';
 import LiveActivityFeed from '../components/LiveActivityFeed';
@@ -32,15 +33,27 @@ const Index: React.FC = () => {
     total: stats.referralsCount || 0
   };
 
-  // Calculate level progress
+  // Calculate level progress with new referral system
   const currentLevelReferrals = stats.referralsCount || 0;
-  const nextLevelTarget = level * 50; // 50 referrals per level
+  
+  // New referral level system: Level 1 = 500, Level 2 = 2000, Level 3 = 10000, Level 4 = 50000
+  const getNextLevelTarget = (currentLevel: number) => {
+    switch (currentLevel) {
+      case 1: return 500;
+      case 2: return 2000;
+      case 3: return 10000;
+      case 4: return 50000;
+      default: return 500; // Default to 500 for level 1
+    }
+  };
+  
+  const nextLevelTarget = getNextLevelTarget(level);
   const levelProgress = Math.min((currentLevelReferrals / nextLevelTarget) * 100, 100);
   const nextLevelReferrals = Math.max(0, nextLevelTarget - currentLevelReferrals);
 
   // Enhanced real-time data
   const [isOnline, setIsOnline] = useState(true);
-  const [currentActivity, setCurrentActivity] = useState('Active in BT Community');
+  const [currentActivity, setCurrentActivity] = useState('Active in Cash Points');
   const [lastSeen, setLastSeen] = useState<Date>(new Date());
       
   // Load real-time stats from database automatically
@@ -141,40 +154,11 @@ const Index: React.FC = () => {
           nextLevelReferrals={nextLevelReferrals}
         />
 
-        {/* Level Progress Section */}
-        <motion.div 
-          className="glass p-6 rounded-xl border border-gold/20"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.6 }}
-        >
-          <div className="flex items-center justify-between mb-4">
-            <h3 className="text-xl font-bold text-gold flex items-center gap-2">
-              <Target className="w-5 h-5" />
-              Level Progress
-            </h3>
-            <span className="text-sm text-gray-400">Level {level}</span>
-          </div>
-          
-          <div className="mb-4">
-            <div className="flex justify-between text-sm mb-2">
-              <span>Current Referrals: {currentLevelReferrals}</span>
-              <span>Next Level: {nextLevelTarget}</span>
-            </div>
-            <div className="w-full bg-gray-700 rounded-full h-3">
-              <div 
-                className="bg-gradient-to-r from-gold to-yellow-500 h-3 rounded-full transition-all duration-500"
-                style={{ width: `${levelProgress}%` }}
-              />
-            </div>
-            <p className="text-xs text-gray-400 mt-2">
-              {nextLevelReferrals > 0 
-                ? `${nextLevelReferrals} more referrals needed for next level`
-                : 'Level up achieved! 🎉'
-              }
-            </p>
-          </div>
-        </motion.div>
+        {/* Referral Levels Card */}
+        <ReferralLevelsCard 
+          currentLevel={level}
+          currentReferrals={currentLevelReferrals}
+        />
 
         {/* Quick Actions */}
         <motion.div 

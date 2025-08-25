@@ -271,7 +271,7 @@ export default function AdminWithdrawals() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5 }}
           >
-            BT Community
+            Cash Points
           </motion.h1>
         </div>
 
@@ -303,7 +303,7 @@ export default function AdminWithdrawals() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            Manage and process withdrawal requests in BT Community
+            Manage and process withdrawal requests in Cash Points
           </motion.p>
         </div>
 

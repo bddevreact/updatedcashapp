@@ -1218,7 +1218,7 @@ export default function Tasks() {
           {
             id: '2',
             title: 'Join Telegram Channel',
-            subtitle: 'BT Community Official',
+            subtitle: 'Cash Points Official',
             reward: 200,
             type: 'social',
             icon: 'social',
@@ -1327,7 +1327,7 @@ export default function Tasks() {
               animate={{ opacity: 1, x: 0 }}
               transition={{ duration: 0.5 }}
             >
-              BT Community Tasks
+              Cash Points Tasks
             </motion.h1>
             <div className="flex items-center gap-2">
               {/* Real-time sync indicator */}

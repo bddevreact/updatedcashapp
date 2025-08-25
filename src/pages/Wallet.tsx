@@ -903,7 +903,7 @@ export default function Wallet() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
-            BT Community Wallet
+            Cash Points Wallet
           </motion.h1>
           <div className="flex items-center gap-4">
             <motion.p 
@@ -997,7 +997,7 @@ export default function Wallet() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.9 }}
           >
-            Withdraw your earnings from BT Community! Deposit feature temporarily disabled.
+            Withdraw your earnings from Cash Points! Deposit feature temporarily disabled.
           </motion.p>
         </div>
       </motion.div>

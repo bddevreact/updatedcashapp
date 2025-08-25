@@ -1,5 +1,5 @@
 -- =====================================================
--- BT COMMUNITY - COMPLETE PROJECT DATABASE (PART 3)
+-- CASH POINTS - COMPLETE PROJECT DATABASE (PART 3)
 -- =====================================================
 -- Part 3: Functions, Triggers, RLS Policies & Sample Data
 -- Run this AFTER Part 2 in your Supabase SQL editor
@@ -586,16 +586,18 @@ END $$;
 
 -- Insert default referral levels
 INSERT INTO referral_levels (level, referrals_required, bonus_amount, xp_bonus) VALUES
-  (1, 5, 100, 50),
-  (2, 15, 250, 100),
-  (3, 30, 500, 200),
-  (4, 50, 1000, 500),
-  (5, 100, 2500, 1000)
-ON CONFLICT (level) DO NOTHING;
+  (1, 500, 200, 100),
+  (2, 2000, 500, 200),
+  (3, 10000, 1500, 500),
+  (4, 50000, 5000, 1000)
+ON CONFLICT (level) DO UPDATE SET
+  referrals_required = EXCLUDED.referrals_required,
+  bonus_amount = EXCLUDED.bonus_amount,
+  xp_bonus = EXCLUDED.xp_bonus;
 
 -- Insert default system settings
 INSERT INTO system_settings (setting_key, setting_value, setting_type, description, is_public) VALUES
-  ('platform_name', 'BT Community', 'string', 'Platform display name', true),
+  ('platform_name', 'Cash Points', 'string', 'Platform display name', true),
   ('min_withdrawal', '100', 'number', 'Minimum withdrawal amount in BDT', true),
   ('max_withdrawal', '50000', 'number', 'Maximum withdrawal amount in BDT', true),
   ('daily_energy_limit', '100', 'number', 'Daily energy limit per user', true),
@@ -618,9 +620,9 @@ ON CONFLICT (task_type) DO NOTHING;
 -- Insert sample task templates
 INSERT INTO task_templates (title, subtitle, description, reward, type, icon, button_text, cooldown, max_completions, url) VALUES
   ('Daily Check-in', 'Complete daily check-in to earn real money', 'Check in daily to maintain your streak and earn rewards. Higher streaks give bonus rewards!', 50, 'checkin', '📅', 'CHECK IN', 86400, 1, ''),
-  ('Join Telegram Channel', 'BT Community Official', 'Join our official Telegram channel for updates and announcements', 200, 'social', '📱', 'JOIN CHANNEL', 0, 1, 'https://t.me/bt_community'),
-  ('Follow on Twitter', 'BT Community Twitter', 'Follow us on Twitter for latest updates and crypto insights', 150, 'social', '🐦', 'FOLLOW TWITTER', 0, 1, 'https://twitter.com/bt_community'),
-  ('Refer a Friend', 'Earn from referrals', 'Invite friends to join BT Community and earn referral bonuses', 300, 'referral', '👥', 'INVITE FRIEND', 0, 10, ''),
+  ('Join Telegram Channel', 'Cash Points Official', 'Join our official Telegram channel for updates and announcements', 200, 'social', '📱', 'JOIN CHANNEL', 0, 1, 'https://t.me/bt_community'),
+  ('Follow on Twitter', 'Cash Points Twitter', 'Follow us on Twitter for latest updates and crypto insights', 150, 'social', '🐦', 'FOLLOW TWITTER', 0, 1, 'https://twitter.com/bt_community'),
+  ('Refer a Friend', 'Earn from referrals', 'Invite friends to join Cash Points and earn referral bonuses', 300, 'referral', '👥', 'INVITE FRIEND', 0, 10, ''),
   ('Trading Platform Signup', 'Join OKX Trading', 'Sign up for OKX trading platform using our referral link', 1000, 'trading_platform', '📈', 'JOIN OKX', 0, 1, 'https://okx.com'),
   ('Binance UID Verification', 'Complete Binance signup', 'Sign up for Binance and submit your UID for verification', 200, 'trading_platform', '💰', 'SIGN UP', 0, 1, 'https://binance.com'),
   ('OKX UID Verification', 'Complete OKX signup', 'Sign up for OKX and submit your UID for verification', 150, 'trading_platform', '💎', 'SIGN UP', 0, 1, 'https://okx.com'),
@@ -880,13 +882,17 @@ BEGIN
       SELECT COUNT(*) INTO user_count FROM admin_users;
       RAISE NOTICE '📊 Total admin users: %', user_count;
       
-      IF user_count > 0 THEN
-        RAISE NOTICE '👥 Sample admin users:';
-        FOR admin_rec IN SELECT * FROM admin_users LIMIT 3 LOOP
-          RAISE NOTICE '   - ID: %, Telegram ID: %, Role: %, Active: %', 
-            admin_rec.user_id, admin_rec.telegram_id, admin_rec.role, admin_rec.is_active;
-        END LOOP;
-      END IF;
+             IF user_count > 0 THEN
+         RAISE NOTICE '👥 Sample admin users:';
+         DECLARE
+           admin_rec record;
+         BEGIN
+           FOR admin_rec IN SELECT * FROM admin_users LIMIT 3 LOOP
+             RAISE NOTICE '   - ID: %, Telegram ID: %, Role: %, Active: %', 
+               admin_rec.user_id, admin_rec.telegram_id, admin_rec.role, admin_rec.is_active;
+           END LOOP;
+         END;
+       END IF;
     END;
     
   ELSE
@@ -959,7 +965,7 @@ BEGIN
   RAISE NOTICE '✅ PART 2: Foreign keys and indexes added';
   RAISE NOTICE '✅ PART 3: Functions, triggers, RLS, and sample data added';
   RAISE NOTICE '';
-  RAISE NOTICE '🎯 Your BT Community database is now complete!';
+  RAISE NOTICE '🎯 Your Cash Points database is now complete!';
   RAISE NOTICE '';
   RAISE NOTICE '📋 What you can do now:';
   RAISE NOTICE '• Admin panel will work properly';

@@ -166,7 +166,7 @@ export default function AdminUsers() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5 }}
           >
-            BT Community
+            Cash Points
           </motion.h1>
         </div>
 
@@ -198,7 +198,7 @@ export default function AdminUsers() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            Manage all BT Community users and their activities
+            Manage all Cash Points users and their activities
           </motion.p>
         </div>
 

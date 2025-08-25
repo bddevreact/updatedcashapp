@@ -134,8 +134,8 @@ export default function Friends() {
     if (navigator.share) {
       try {
         await navigator.share({
-          title: 'Join BT Community',
-          text: 'Join me on BT Community and start earning! Use my referral code to get a bonus!',
+                  title: 'Join Cash Points',
+        text: 'Join me on Cash Points and start earning! Use my referral code to get a bonus!',
           url: 'https://btcommunity.com'
         });
       } catch (error) {
@@ -284,7 +284,7 @@ export default function Friends() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
-            BT Community Friends
+            Cash Points Friends
           </motion.h1>
           <div className="flex items-center gap-4">
             <motion.p 

@@ -566,7 +566,7 @@ export default function AdminTradingReferrals() {
             animate={{ opacity: 1, x: 0 }}
             transition={{ duration: 0.5 }}
           >
-            BT Community
+            Cash Points
           </motion.h1>
         </div>
 

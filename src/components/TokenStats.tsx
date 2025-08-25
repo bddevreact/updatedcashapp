@@ -10,7 +10,7 @@ export default function TokenStats() {
         animate={{ opacity: 1, y: 0 }}
         transition={{ duration: 0.5 }}
       >
-        BT Community
+        Cash Points
       </motion.h2>
       <div className="mt-4 space-y-3">
         <div className="flex justify-between items-center">
