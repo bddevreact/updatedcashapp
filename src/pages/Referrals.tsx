@@ -191,9 +191,18 @@ export default function Referrals() {
         new Date(e.created_at) >= thisMonth
       ).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
 
-      const level = Math.floor(totalMembers / 10) + 1;
-      const nextLevelProgress = totalMembers % 10;
-      const nextLevelTarget = 10;
+      // New level calculation based on referral system
+      const getLevelInfo = (totalMembers: number) => {
+        if (totalMembers >= 50000) return { level: 4, nextTarget: 50000, progress: 100 };
+        if (totalMembers >= 10000) return { level: 3, nextTarget: 10000, progress: Math.min((totalMembers / 10000) * 100, 100) };
+        if (totalMembers >= 2000) return { level: 2, nextTarget: 2000, progress: Math.min((totalMembers / 2000) * 100, 100) };
+        return { level: 1, nextTarget: 500, progress: Math.min((totalMembers / 500) * 100, 100) };
+      };
+      
+      const levelInfo = getLevelInfo(totalMembers);
+      const level = levelInfo.level;
+      const nextLevelProgress = levelInfo.progress;
+      const nextLevelTarget = levelInfo.nextTarget;
 
       setReferralStats({
         totalMembers,
