@@ -82,7 +82,7 @@ export default function AdminLogin() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.6, delay: 0.2 }}
           >
-            BT Community
+            Cash Points
           </motion.h2>
           <motion.p 
             className="text-xl font-semibold text-gold mb-2"
