@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Search, Filter, CheckCircle, XCircle, Eye, Clock, AlertCircle, Plus, Edit, Trash2, Save, X, Copy } from 'lucide-react';
+import { TrendingUp, Search, Filter, CheckCircle, XCircle, Eye, Clock, AlertCircle, Plus, Edit, Trash2, Save, X, Copy, Settings, RefreshCw, Link, Users, DollarSign, Target, Award } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
+import { useUserStore } from '../../store/userStore';
 
 interface TradingReferral {
   id: string;
@@ -37,7 +38,18 @@ interface IndividualReferralConfig {
   tracking_params: string;
 }
 
+interface ReferralConfig {
+  base_url: string;
+  referral_reward: number;
+  is_active: boolean;
+  unique_link_enabled: boolean;
+  link_format: 'telegram_id' | 'referral_code' | 'both';
+  group_link: string;
+  tracking_enabled: boolean;
+}
+
 export default function AdminTradingReferrals() {
+  const { addNotification } = useUserStore();
   const [tradingReferrals, setTradingReferrals] = useState<TradingReferral[]>([]);
   const [tradingPlatforms, setTradingPlatforms] = useState<TradingPlatform[]>([]);
   const [loading, setLoading] = useState(true);
@@ -65,7 +77,7 @@ export default function AdminTradingReferrals() {
   // Add individual referral system state
   const [individualReferralConfig, setIndividualReferralConfig] = useState<IndividualReferralConfig>({
     base_url: '',
-    referral_reward: 50,
+    referral_reward: 2, // Updated to 2 taka as per new system
     is_active: true,
     tracking_params: '?ref={USER_ID}&source=bt_app&tracking=referral'
   });
@@ -80,6 +92,17 @@ export default function AdminTradingReferrals() {
   // Add users list for individual referral management
   const [users, setUsers] = useState<any[]>([]);
   const [showUserReferralLinks, setShowUserReferralLinks] = useState(false);
+  const [config, setConfig] = useState<ReferralConfig>({
+    base_url: '',
+    referral_reward: 2,
+    is_active: true,
+    unique_link_enabled: true,
+    link_format: 'both',
+    group_link: 'https://t.me/BTCommunityGroup',
+    tracking_enabled: true
+  });
+  const [isLoading, setIsLoading] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     loadTradingReferrals();
@@ -87,6 +110,7 @@ export default function AdminTradingReferrals() {
     loadIndividualReferralConfig(); // Load individual referral config
     loadReferralStats(); // Load referral statistics
     loadUsers(); // Load users for individual referral management
+    loadConfig(); // Load referral configuration
   }, []);
 
   const loadTradingReferrals = async () => {
@@ -459,7 +483,7 @@ export default function AdminTradingReferrals() {
         const config = JSON.parse(data.config_value || '{}');
         setIndividualReferralConfig({
           base_url: config.base_url || '',
-          referral_reward: config.referral_reward || 50,
+          referral_reward: config.referral_reward || 2, // Updated to 2 taka as per new system
           is_active: config.is_active !== false,
           tracking_params: config.tracking_params || '?ref={USER_ID}&source=bt_app&tracking=referral'
         });
@@ -547,9 +571,91 @@ export default function AdminTradingReferrals() {
   };
 
   // Simple notification function
-  const addNotification = (notification: { type: string; title: string; message: string }) => {
-    console.log(`${notification.type.toUpperCase()}: ${notification.title} - ${notification.message}`);
-    // You can integrate this with your notification system
+
+
+  const loadConfig = async () => {
+    setIsLoading(true);
+    try {
+      const { data, error } = await supabase
+        .from('global_config')
+        .select('*')
+        .eq('config_key', 'individual_referral_system')
+        .single();
+
+      if (!error && data) {
+        const savedConfig = JSON.parse(data.config_value || '{}');
+        setConfig({
+          base_url: savedConfig.base_url || '',
+          referral_reward: savedConfig.referral_reward || 2,
+          is_active: savedConfig.is_active !== false,
+          unique_link_enabled: savedConfig.unique_link_enabled !== false,
+          link_format: savedConfig.link_format || 'both',
+          group_link: savedConfig.group_link || 'https://t.me/BTCommunityGroup',
+          tracking_enabled: savedConfig.tracking_enabled !== false
+        });
+      }
+    } catch (error) {
+      console.error('Error loading config:', error);
+      addNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'Failed to load referral configuration'
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const saveConfig = async () => {
+    setIsSaving(true);
+    try {
+      const { error } = await supabase
+        .from('global_config')
+        .upsert({
+          config_key: 'individual_referral_system',
+          config_value: JSON.stringify(config),
+          updated_at: new Date().toISOString()
+        });
+
+      if (error) throw error;
+
+      addNotification({
+        type: 'success',
+        title: 'Success',
+        message: 'Referral configuration saved successfully!'
+      });
+    } catch (error) {
+      console.error('Error saving config:', error);
+      addNotification({
+        type: 'error',
+        title: 'Error',
+        message: 'Failed to save referral configuration'
+      });
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  const handleInputChange = (field: keyof ReferralConfig, value: any) => {
+    setConfig(prev => ({ ...prev, [field]: value }));
+  };
+
+  const generateSampleLink = () => {
+    if (!config.base_url) return 'No base URL configured';
+    
+    const sampleUserId = '123456789';
+    const sampleReferralCode = 'ABC123';
+    
+    switch (config.link_format) {
+      case 'telegram_id':
+        return `${config.base_url}?ref=${sampleUserId}&user=${sampleUserId}&source=bt_app&tracking=referral`;
+      case 'referral_code':
+        return `${config.base_url}?ref=${sampleReferralCode}&user=${sampleUserId}&source=bt_app&tracking=referral`;
+      case 'both':
+        return `${config.base_url}?ref=${sampleReferralCode}&user=${sampleUserId}&source=bt_app&tracking=referral&unique=${Date.now()}`;
+      default:
+        return config.base_url;
+    }
   };
 
   return (
@@ -1289,6 +1395,263 @@ export default function AdminTradingReferrals() {
             </table>
           </div>
         </div>
+
+        {/* Referral System Configuration Section */}
+        <motion.div 
+          className="glass p-6 border border-white/10 rounded-xl mt-8"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.7 }}
+        >
+          <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold text-white">Referral System Configuration</h2>
+            <button
+              onClick={saveConfig}
+              disabled={isSaving}
+              className="px-4 py-2 bg-gold hover:bg-yellow-500 disabled:bg-gray-600 text-navy rounded-lg transition-all duration-300 flex items-center gap-2 font-semibold"
+            >
+              <Save className="w-4 h-4" />
+              {isSaving ? 'Saving...' : 'Save Configuration'}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Base URL Configuration */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium text-white flex items-center gap-2">
+                <Link className="w-4 h-4 text-blue-400" />
+                Base URL Configuration
+              </h3>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Base URL for Referral Links
+                </label>
+                <input
+                  type="url"
+                  value={config.base_url}
+                  onChange={(e) => handleInputChange('base_url', e.target.value)}
+                  placeholder="https://your-domain.com/join"
+                  className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gray-600 focus:border-gold focus:outline-none"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  This will be the base URL for all referral links
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Group Link (Fallback)
+                </label>
+                <input
+                  type="url"
+                  value={config.group_link}
+                  onChange={(e) => handleInputChange('group_link', e.target.value)}
+                  placeholder="https://t.me/YourGroup"
+                  className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gray-600 focus:border-gold focus:outline-none"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Used when individual referral system is disabled
+                </p>
+              </div>
+            </div>
+
+            {/* Link Format Configuration */}
+            <div className="space-y-4">
+              <h3 className="text-lg font-medium text-white flex items-center gap-2">
+                <Target className="w-4 h-4 text-green-400" />
+                Link Format Settings
+              </h3>
+              
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Enable Unique Links
+                </label>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => handleInputChange('unique_link_enabled', true)}
+                    className={`px-4 py-2 rounded-lg transition-all duration-300 ${
+                      config.unique_link_enabled 
+                        ? 'bg-green-600 text-white' 
+                        : 'bg-gray-600 text-gray-300'
+                    }`}
+                  >
+                    Enabled
+                  </button>
+                  <button
+                    onClick={() => handleInputChange('unique_link_enabled', false)}
+                    className={`px-4 py-2 rounded-lg transition-all duration-300 ${
+                      !config.unique_link_enabled 
+                        ? 'bg-red-600 text-white' 
+                        : 'bg-gray-600 text-gray-300'
+                    }`}
+                  >
+                    Disabled
+                  </button>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Link Format Type
+                </label>
+                <select
+                  value={config.link_format}
+                  onChange={(e) => handleInputChange('link_format', e.target.value)}
+                  className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gray-600 focus:border-gold focus:outline-none"
+                >
+                  <option value="telegram_id">Telegram ID Only</option>
+                  <option value="referral_code">Referral Code Only</option>
+                  <option value="both">Both (Telegram ID + Referral Code)</option>
+                </select>
+                <p className="text-xs text-gray-400 mt-1">
+                  How to format the unique identifier in referral links
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Enable Tracking
+                </label>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => handleInputChange('tracking_enabled', true)}
+                    className={`px-4 py-2 rounded-lg transition-all duration-300 ${
+                      config.tracking_enabled 
+                        ? 'bg-green-600 text-white' 
+                        : 'bg-gray-600 text-gray-300'
+                    }`}
+                  >
+                    Enabled
+                  </button>
+                  <button
+                    onClick={() => handleInputChange('tracking_enabled', false)}
+                    className={`px-4 py-2 rounded-lg transition-all duration-300 ${
+                      !config.tracking_enabled 
+                        ? 'bg-red-600 text-white' 
+                        : 'bg-gray-600 text-gray-300'
+                    }`}
+                  >
+                    Disabled
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Reward Configuration */}
+          <div className="mt-8 p-4 bg-gray-800/50 rounded-lg border border-gray-700/50">
+            <h3 className="text-lg font-medium text-white mb-4 flex items-center gap-2">
+              <DollarSign className="w-4 h-4 text-gold" />
+              Reward Configuration
+            </h3>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  Referral Reward (Taka)
+                </label>
+                <input
+                  type="number"
+                  value={config.referral_reward}
+                  onChange={(e) => handleInputChange('referral_reward', parseInt(e.target.value))}
+                  min="0"
+                  step="1"
+                  className="w-full bg-gray-800 text-white px-4 py-3 rounded-lg border border-gray-600 focus:border-gold focus:outline-none"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Amount awarded to referrer for each successful referral
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-300 mb-2">
+                  System Status
+                </label>
+                <div className="flex items-center gap-3">
+                  <button
+                    onClick={() => handleInputChange('is_active', true)}
+                    className={`px-4 py-2 rounded-lg transition-all duration-300 ${
+                      config.is_active 
+                        ? 'bg-green-600 text-white' 
+                        : 'bg-gray-600 text-gray-300'
+                    }`}
+                  >
+                    Active
+                  </button>
+                  <button
+                    onClick={() => handleInputChange('is_active', false)}
+                    className={`px-4 py-2 rounded-lg transition-all duration-300 ${
+                      !config.is_active 
+                        ? 'bg-red-600 text-white' 
+                        : 'bg-gray-600 text-gray-300'
+                    }`}
+                  >
+                    Inactive
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Sample Link Preview */}
+          <div className="mt-8 p-4 bg-blue-500/10 rounded-lg border border-blue-500/20">
+            <h3 className="text-lg font-medium text-blue-400 mb-4 flex items-center gap-2">
+              <Link className="w-4 h-4" />
+              Sample Link Preview
+            </h3>
+            
+            <div className="bg-gray-800 p-3 rounded-lg border border-gray-600">
+              <code className="text-sm text-blue-300 break-all">
+                {generateSampleLink()}
+              </code>
+            </div>
+            
+            <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-blue-400 rounded-full"></div>
+                <span className="text-gray-300">ref: Unique identifier</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-green-400 rounded-full"></div>
+                <span className="text-gray-300">user: Telegram ID</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <div className="w-2 h-2 bg-purple-400 rounded-full"></div>
+                <span className="text-gray-300">tracking: Analytics data</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Configuration Summary */}
+          <div className="mt-8 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="p-4 bg-gray-800/50 rounded-lg border border-gray-700/50 text-center">
+              <div className="text-2xl font-bold text-gold mb-1">৳{config.referral_reward}</div>
+              <div className="text-xs text-gray-400">Referral Reward</div>
+            </div>
+            
+            <div className="p-4 bg-gray-800/50 rounded-lg border border-gray-700/50 text-center">
+              <div className="text-2xl font-bold text-green-400 mb-1">
+                {config.unique_link_enabled ? '✓' : '✗'}
+              </div>
+              <div className="text-xs text-gray-400">Unique Links</div>
+            </div>
+            
+            <div className="p-4 bg-gray-800/50 rounded-lg border border-gray-700/50 text-center">
+              <div className="text-2xl font-bold text-blue-400 mb-1">
+                {config.tracking_enabled ? '✓' : '✗'}
+              </div>
+              <div className="text-xs text-gray-400">Tracking</div>
+            </div>
+            
+            <div className="p-4 bg-gray-800/50 rounded-lg border border-gray-700/50 text-center">
+              <div className="text-2xl font-bold text-purple-400 mb-1">
+                {config.is_active ? '✓' : '✗'}
+              </div>
+              <div className="text-xs text-gray-400">System Active</div>
+            </div>
+          </div>
+        </motion.div>
       </div>
     </div>
   );

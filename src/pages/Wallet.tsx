@@ -721,8 +721,7 @@ export default function Wallet() {
           bgColor: 'bg-green-500/20',
           description: 'Fast mobile banking transfer',
           placeholder: 'Bkash Number (01XXXXXXXXX)',
-          minAmount: 100,
-          processingTime: '2-5 minutes'
+          minAmount: 100
         };
       case 'nagad':
         return {
@@ -732,8 +731,7 @@ export default function Wallet() {
           bgColor: 'bg-blue-500/20',
           description: 'Digital financial service',
           placeholder: 'Nagad Number (01XXXXXXXXX)',
-          minAmount: 100,
-          processingTime: '2-5 minutes'
+          minAmount: 100
         };
       case 'rocket':
         return {
@@ -743,8 +741,7 @@ export default function Wallet() {
           bgColor: 'bg-purple-500/20',
           description: 'DBBL mobile banking',
           placeholder: 'Rocket Number (01XXXXXXXXX)',
-          minAmount: 100,
-          processingTime: '2-5 minutes'
+          minAmount: 100
         };
       case 'bank':
         return {
@@ -754,8 +751,7 @@ export default function Wallet() {
           bgColor: 'bg-orange-500/20',
           description: 'Direct bank account transfer',
           placeholder: 'Account Number',
-          minAmount: 500,
-          processingTime: '1-3 business days'
+          minAmount: 500
         };
       case 'crypto':
         return {
@@ -765,8 +761,7 @@ export default function Wallet() {
           bgColor: 'bg-yellow-500/20',
           description: 'Withdraw to crypto wallet',
           placeholder: 'Wallet Address',
-          minAmount: 200,
-          processingTime: '5-15 minutes'
+          minAmount: 200
         };
       default:
         return {
@@ -776,8 +771,7 @@ export default function Wallet() {
           bgColor: 'bg-green-500/20',
           description: 'Fast mobile banking transfer',
           placeholder: 'Bkash Number (01XXXXXXXXX)',
-          minAmount: 100,
-          processingTime: '2-5 minutes'
+          minAmount: 100
         };
     }
   };
@@ -792,8 +786,7 @@ export default function Wallet() {
           bgColor: 'bg-green-500/20',
           description: 'Fast mobile banking transfer',
           placeholder: 'Bkash Number (01XXXXXXXXX)',
-          minAmount: 100,
-          processingTime: '2-5 minutes'
+          minAmount: 100
         };
       case 'nagad':
         return {
@@ -803,8 +796,7 @@ export default function Wallet() {
           bgColor: 'bg-blue-500/20',
           description: 'Digital financial service',
           placeholder: 'Nagad Number (01XXXXXXXXX)',
-          minAmount: 100,
-          processingTime: '2-5 minutes'
+          minAmount: 100
         };
       case 'rocket':
         return {
@@ -814,8 +806,7 @@ export default function Wallet() {
           bgColor: 'bg-purple-500/20',
           description: 'DBBL mobile banking',
           placeholder: 'Rocket Number (01XXXXXXXXX)',
-          minAmount: 100,
-          processingTime: '2-5 minutes'
+          minAmount: 100
         };
       case 'bank':
         return {
@@ -825,8 +816,7 @@ export default function Wallet() {
           bgColor: 'bg-orange-500/20',
           description: 'Direct bank account transfer',
           placeholder: 'Account Number',
-          minAmount: 500,
-          processingTime: '1-3 business days'
+          minAmount: 500
         };
       case 'crypto':
         return {
@@ -836,8 +826,7 @@ export default function Wallet() {
           bgColor: 'bg-yellow-500/20',
           description: 'Deposit from crypto wallet',
           placeholder: 'Wallet Address',
-          minAmount: 200,
-          processingTime: '5-15 minutes'
+          minAmount: 200
         };
       default:
         return {
@@ -847,8 +836,7 @@ export default function Wallet() {
           bgColor: 'bg-green-500/20',
           description: 'Fast mobile banking transfer',
           placeholder: 'Bkash Number (01XXXXXXXXX)',
-          minAmount: 100,
-          processingTime: '2-5 minutes'
+          minAmount: 100
         };
     }
   };
@@ -1307,7 +1295,6 @@ export default function Wallet() {
                   {React.createElement(getWithdrawMethodInfo().icon, { className: `w-5 h-5 ${getWithdrawMethodInfo().color}` })}
                   <h4 className={`font-semibold ${getWithdrawMethodInfo().color}`}>{getWithdrawMethodInfo().name}</h4>
                 </div>
-                <span className="text-xs text-gray-400">Processing: {getWithdrawMethodInfo().processingTime}</span>
               </div>
               <p className="text-gray-300 text-sm mb-2">{getWithdrawMethodInfo().description}</p>
               <div className="flex items-center justify-between text-xs">
@@ -1611,15 +1598,7 @@ export default function Wallet() {
                           </div>
                         )}
                         
-                        {/* Processing Time */}
-                        {tx.details.processed_at && (
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs text-gray-400">Processed:</span>
-                            <span className="text-xs text-gray-300">
-                              {formatTimeAgo(new Date(tx.details.processed_at))}
-                            </span>
-                          </div>
-                        )}
+
                       </div>
                     );
                   })()}
@@ -1758,15 +1737,7 @@ export default function Wallet() {
                                   </div>
                                 )}
                                 
-                                {/* Processing Time */}
-                                {tx.details.processed_at && (
-                                  <div className="flex items-center justify-between">
-                                    <span className="text-gray-400">Processed:</span>
-                                    <span className="text-gray-300">
-                                      {formatTimeAgo(new Date(tx.details.processed_at))}
-                                    </span>
-                                  </div>
-                                )}
+
                               </div>
                             );
                           })()}

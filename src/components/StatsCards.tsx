@@ -31,45 +31,57 @@ const StatsCardsRow: React.FC<StatsCardsRowProps> = ({ currentLevel, totalReferr
     switch (level) {
       case 1:
         return {
-          referralsNeeded: 500,
+          referralsNeeded: 100,
           bonus: '৳200',
           opportunities: 'Level 1 Referral Bonus',
-          color: 'text-green-400'
+          color: 'text-green-400',
+          bengaliRequired: '১০০',
+          bengaliBonus: '২০০'
         };
       case 2:
         return {
-          referralsNeeded: 2000,
+          referralsNeeded: 1000,
           bonus: '৳500',
           opportunities: 'Level 2 Referral Bonus',
-          color: 'text-blue-400'
+          color: 'text-blue-400',
+          bengaliRequired: '১০০০',
+          bengaliBonus: '৫০০'
         };
       case 3:
         return {
-          referralsNeeded: 10000,
+          referralsNeeded: 5000,
           bonus: '৳1,500',
           opportunities: 'Level 3 Referral Bonus',
-          color: 'text-purple-400'
+          color: 'text-purple-400',
+          bengaliRequired: '৫০০০',
+          bengaliBonus: '১৫০০'
         };
       case 4:
         return {
-          referralsNeeded: 50000,
-          bonus: '৳5,000',
+          referralsNeeded: 10000,
+          bonus: '৳3,000',
           opportunities: 'Level 4 Referral Bonus',
-          color: 'text-gold'
+          color: 'text-gold',
+          bengaliRequired: '১০০০০',
+          bengaliBonus: '৩০০০'
         };
       case 5:
         return {
           referralsNeeded: 100000,
           bonus: '৳10,000',
           opportunities: 'Legendary Status + Maximum Benefits',
-          color: 'text-red-400'
+          color: 'text-red-400',
+          bengaliRequired: '১০০০০০',
+          bengaliBonus: '১০০০০'
         };
       default:
         return {
-          referralsNeeded: 500,
+          referralsNeeded: 100,
           bonus: '৳200',
           opportunities: 'Level 1 Referral Bonus',
-          color: 'text-green-400'
+          color: 'text-green-400',
+          bengaliRequired: '১০০',
+          bengaliBonus: '২০০'
         };
     }
   };

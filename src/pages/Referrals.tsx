@@ -1,10 +1,11 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Share2, Copy, TrendingUp, Award, Target, Calendar, DollarSign, AlertTriangle, CheckCircle, Clock, RefreshCw, Eye, Shield, Bot, UserCheck, UserX, MessageCircle, Settings, Zap, Activity, Info, BarChart3 } from 'lucide-react';
+import { Users, Share2, Copy, TrendingUp, Award, Target, Calendar, DollarSign, AlertTriangle, CheckCircle, Clock, RefreshCw, Eye, Shield, Bot, UserCheck, UserX, MessageCircle, Settings, Zap, Activity, Info, BarChart3, Link } from 'lucide-react';
 import { useUserStore } from '../store/userStore';
 import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { motion, AnimatePresence } from 'framer-motion';
 import { supabase } from '../lib/supabase';
 import ReferralDashboard from '../components/ReferralDashboard';
+import SocialShareModal from '../components/SocialShareModal';
 
 interface GroupMember {
   id: string;
@@ -18,6 +19,9 @@ interface GroupMember {
   messageCount: number;
   isBot: boolean;
   referralValue: number;
+  rejoinCount: number;
+  isActive: boolean;
+  lastJoinDate: string;
 }
 
 interface ReferralStats {
@@ -36,13 +40,14 @@ interface ReferralStats {
 }
 
 export default function Referrals() {
-  const { stats, addNotification } = useUserStore();
+  const { stats, addNotification, referralCode } = useUserStore();
   const [copied, setCopied] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'analytics' | 'enhanced' | 'settings'>('overview');
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [liveMemberCount, setLiveMemberCount] = useState(156);
   const [isLive, setIsLive] = useState(true);
+  const [showSocialShareModal, setShowSocialShareModal] = useState(false);
   
   // Settings state
   const [settings, setSettings] = useState({
@@ -191,13 +196,13 @@ export default function Referrals() {
         new Date(e.created_at) >= thisMonth
       ).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
 
-      // New level calculation based on referral system
-      const getLevelInfo = (totalMembers: number) => {
-        if (totalMembers >= 50000) return { level: 4, nextTarget: 50000, progress: 100 };
-        if (totalMembers >= 10000) return { level: 3, nextTarget: 10000, progress: Math.min((totalMembers / 10000) * 100, 100) };
-        if (totalMembers >= 2000) return { level: 2, nextTarget: 2000, progress: Math.min((totalMembers / 2000) * 100, 100) };
-        return { level: 1, nextTarget: 500, progress: Math.min((totalMembers / 500) * 100, 100) };
-      };
+             // New level calculation based on referral system
+       const getLevelInfo = (totalMembers: number) => {
+         if (totalMembers >= 10000) return { level: 4, nextTarget: 10000, progress: 100 };
+         if (totalMembers >= 5000) return { level: 3, nextTarget: 5000, progress: Math.min((totalMembers / 5000) * 100, 100) };
+         if (totalMembers >= 1000) return { level: 2, nextTarget: 1000, progress: Math.min((totalMembers / 1000) * 100, 100) };
+         return { level: 1, nextTarget: 100, progress: Math.min((totalMembers / 100) * 100, 100) };
+       };
       
       const levelInfo = getLevelInfo(totalMembers);
       const level = levelInfo.level;
@@ -284,7 +289,10 @@ export default function Referrals() {
           lastActivity: formatTimeAgo(lastActive),
           messageCount,
           isBot: false, // Would be determined by actual bot detection
-          referralValue: ref.status === 'verified' ? 50 : 0
+                     referralValue: ref.status === 'verified' ? 2 : 0, // Updated to 2 taka as per new system
+           rejoinCount: ref.rejoin_count || 0,
+           isActive: ref.is_active !== false,
+           lastJoinDate: ref.last_join_date || ref.created_at
         };
       }) || [];
 
@@ -298,8 +306,9 @@ export default function Referrals() {
   // Load individual referral configuration to get base URL and reward
   const [individualReferralConfig, setIndividualReferralConfig] = useState({
     base_url: '',
-    referral_reward: 50,
-    is_active: true
+    referral_reward: 2, // Updated to 2 taka as per new system
+    is_active: true,
+    tracking_enabled: true
   });
 
   useEffect(() => {
@@ -316,10 +325,11 @@ export default function Referrals() {
 
       if (!error && data) {
         const config = JSON.parse(data.config_value || '{}');
-        setIndividualReferralConfig({
+                setIndividualReferralConfig({
           base_url: config.base_url || '',
-          referral_reward: config.referral_reward || 50,
-          is_active: config.is_active !== false
+          referral_reward: config.referral_reward || 2, // Updated to 2 taka as per new system
+          is_active: config.is_active !== false,
+          tracking_enabled: config.tracking_enabled !== false
         });
       }
     } catch (error) {
@@ -331,8 +341,11 @@ export default function Referrals() {
   const generateIndividualReferralLink = () => {
     if (!individualReferralConfig.base_url || !telegramId) return '';
     
-    // Create individual referral link with user's telegram ID and tracking parameters
-    const individualLink = `${individualReferralConfig.base_url}?ref=${telegramId}&source=bt_app&tracking=referral`;
+    // Create unique referral link with user's telegram ID and referral code
+    const uniqueIdentifier = referralCode || telegramId;
+    const trackingParams = individualReferralConfig.tracking_enabled ? 
+      `&source=bt_app&tracking=referral&unique=${Date.now()}` : '';
+    const individualLink = `${individualReferralConfig.base_url}?ref=${uniqueIdentifier}&user=${telegramId}${trackingParams}`;
     return individualLink;
   };
 
@@ -373,27 +386,48 @@ export default function Referrals() {
     setTimeout(() => setCopied(false), 2000);
   };
 
-  const refreshData = async () => {
-    setIsRefreshing(true);
-    try {
-      await loadReferralStats();
-      await loadGroupMembers();
-      addNotification({
-        type: 'success',
-        title: 'Success',
-        message: 'Referral data refreshed successfully!'
-      });
-    } catch (error) {
-      console.error('Error refreshing data:', error);
-      addNotification({
-        type: 'error',
-        title: 'Error',
-        message: 'Failed to refresh referral data'
-      });
-    } finally {
-    setIsRefreshing(false);
-    }
-  };
+     const refreshData = async () => {
+     setIsRefreshing(true);
+     try {
+       await loadReferralStats();
+       await loadGroupMembers();
+       
+       // Check for duplicate join warnings
+       const { data: notifications, error: notifError } = await supabase
+         .from('notifications')
+         .select('*')
+         .eq('user_id', telegramId)
+         .eq('type', 'warning')
+         .eq('title', 'Duplicate Join Warning')
+         .order('created_at', { ascending: false })
+         .limit(5);
+       
+       if (notifications && notifications.length > 0) {
+         notifications.forEach(notif => {
+           addNotification({
+             type: 'warning',
+             title: 'Duplicate Join Warning',
+             message: notif.message
+           });
+         });
+       }
+       
+       addNotification({
+         type: 'success',
+         title: 'Success',
+         message: 'Referral data refreshed successfully!'
+       });
+     } catch (error) {
+       console.error('Error refreshing data:', error);
+       addNotification({
+         type: 'error',
+         title: 'Error',
+         message: 'Failed to refresh referral data'
+       });
+     } finally {
+     setIsRefreshing(false);
+     }
+   };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -830,7 +864,7 @@ export default function Referrals() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.9 }}
           >
-            Invite friends to join Cash Points and earn ৳50 for every verified member!
+                         Invite friends to join Cash Points and earn ৳2 for every verified member!
           </motion.p>
         </div>
       </motion.div>
@@ -890,7 +924,7 @@ export default function Referrals() {
               <Target className="w-5 h-5 text-gold" />
               Member Status Overview
             </h3>
-            <div className="grid grid-cols-4 gap-3">
+                         <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               <div className="text-center">
                 <div className="w-12 h-12 bg-green-500/20 rounded-full flex items-center justify-center mx-auto mb-2">
                   <CheckCircle className="w-6 h-6 text-green-400" />
@@ -968,6 +1002,24 @@ export default function Referrals() {
               <p className="text-xs text-gray-400">
                 {referralStats.nextLevelProgress}/{referralStats.nextLevelTarget} to next level
               </p>
+              {/* Bengali Level Description */}
+              <div className="mt-3 p-2 bg-gold/10 rounded-lg border border-gold/20">
+                <p className="text-sm text-gold font-medium">
+                  {(() => {
+                    const getBengaliLevelInfo = (level: number) => {
+                      switch (level) {
+                        case 1: return { required: '১০০', bonus: '২০০' };
+                        case 2: return { required: '১০০০', bonus: '৫০০' };
+                        case 3: return { required: '৫০০০', bonus: '১৫০০' };
+                        case 4: return { required: '১০০০০', bonus: '৩০০০' };
+                        default: return { required: '১০০', bonus: '২০০' };
+                      }
+                    };
+                    const levelInfo = getBengaliLevelInfo(referralStats.level);
+                    return `👥 ${levelInfo.required} মেম্বার অ্যাড = 🎁 ${levelInfo.bonus} টাকা বোনাস`;
+                  })()}
+                </p>
+              </div>
             </div>
           </div>
 
@@ -1013,8 +1065,10 @@ export default function Referrals() {
             </div>
           </div>
 
-          {/* Performance Insights */}
-          <div className="glass p-4 mb-6 border border-white/10">
+                                                             
+
+           {/* Performance Insights */}
+           <div className="glass p-4 mb-6 border border-white/10">
             <h3 className="text-lg font-semibold mb-3 flex items-center gap-2">
               <TrendingUp className="w-5 h-5 text-green-400" />
               Performance Insights
@@ -1088,11 +1142,17 @@ export default function Referrals() {
                         {getStatusIcon(member.status)}
                       </div>
                       <p className="text-sm text-gray-400">@{member.username}</p>
-                      <div className="flex items-center gap-4 text-xs text-gray-500">
-                        <span>Joined: {formatDate(member.joinDate)}</span>
-                        <span>Messages: {member.messageCount}</span>
-                        <span>Last: {member.lastActivity}</span>
-                      </div>
+                                             <div className="flex items-center gap-4 text-xs text-gray-500">
+                         <span>Joined: {formatDate(member.joinDate)}</span>
+                         <span>Messages: {member.messageCount}</span>
+                         <span>Last: {member.lastActivity}</span>
+                         {member.rejoinCount > 0 && (
+                           <span className="text-red-400 font-semibold">⚠️ Duplicate Join</span>
+                         )}
+                         <span className={`${member.isActive ? 'text-green-400' : 'text-red-400'}`}>
+                           {member.isActive ? 'Active' : 'Left'}
+                         </span>
+                       </div>
                     </div>
                   </div>
                   <div className="text-right">
@@ -1797,7 +1857,7 @@ export default function Referrals() {
         {/* Referral Link Actions */}
         <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <button
-          onClick={() => window.open(referralLink, '_blank')}
+          onClick={() => setShowSocialShareModal(true)}
             className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white py-3 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-300 flex items-center justify-center gap-2 font-semibold"
         >
           <Share2 className="w-4 h-4" />
@@ -1857,11 +1917,20 @@ export default function Referrals() {
                 <div className="text-xs text-yellow-300">Pending Verification</div>
                 <div className="text-xs text-yellow-400">Awaiting admin review</div>
               </div>
-              <div className="text-center p-3 bg-red-500/10 rounded-lg border border-red-500/20">
-                <div className="text-2xl font-bold text-red-400">{referralStats.suspiciousMembers}</div>
-                <div className="text-xs text-red-300">Suspicious</div>
-                <div className="text-xs text-red-400">Under investigation</div>
-              </div>
+                             <div className="text-center p-3 bg-red-500/10 rounded-lg border border-red-500/20">
+                 <div className="text-2xl font-bold text-red-400">{referralStats.suspiciousMembers}</div>
+                 <div className="text-xs text-red-300">Suspicious</div>
+                 <div className="text-xs text-red-400">Under investigation</div>
+               </div>
+                               <div className="text-center p-3 bg-red-500/10 rounded-lg border border-red-500/20">
+                  <div className="text-2xl font-bold text-red-400">
+                    {groupMembers.filter(m => m.rejoinCount > 0).length}
+                  </div>
+                  <div className="text-xs text-red-300">Duplicate Joins</div>
+                  <div className="text-xs text-red-400">
+                    No reward given
+                  </div>
+                </div>
             </div>
 
             {/* Quick Actions */}
@@ -1890,7 +1959,7 @@ export default function Referrals() {
               Share your referral link to start earning rewards!
             </p>
             <button
-              onClick={() => window.open(referralLink, '_blank')}
+              onClick={() => setShowSocialShareModal(true)}
               className="px-6 py-2 bg-gradient-to-r from-gold to-yellow-500 text-navy rounded-lg font-semibold hover:scale-105 transition-all duration-300"
             >
               Share Your Link Now
@@ -1991,12 +2060,22 @@ export default function Referrals() {
         <h4 className="text-gold font-semibold mb-2">Ready to Build Your Referral Empire?</h4>
         <p className="text-gray-300 text-sm mb-3">Share your group link and earn real money from every member</p>
         <button
-          onClick={() => window.open(referralLink, '_blank')}
+          onClick={() => setShowSocialShareModal(true)}
           className="bg-gradient-to-r from-gold to-yellow-500 text-navy px-6 py-2 rounded-lg font-semibold hover:from-yellow-400 hover:to-gold transition-all duration-300 transform hover:scale-105"
         >
           Share Group & Earn
         </button>
       </div>
+
+      {/* Social Share Modal */}
+      <SocialShareModal
+        isOpen={showSocialShareModal}
+        onClose={() => setShowSocialShareModal(false)}
+        referralLink={referralLink}
+                 referralCode={individualReferralConfig.base_url ? (referralCode || undefined) : undefined}
+        title="Join Cash Points and earn real money!"
+        description="Use my referral link to join and start earning rewards instantly. No investment required!"
+      />
     </div>
     </div>
   );

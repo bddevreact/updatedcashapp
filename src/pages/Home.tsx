@@ -36,14 +36,14 @@ const Index: React.FC = () => {
   // Calculate level progress with new referral system
   const currentLevelReferrals = stats.referralsCount || 0;
   
-  // New referral level system: Level 1 = 500, Level 2 = 2000, Level 3 = 10000, Level 4 = 50000
+  // New referral level system: Level 1 = 100, Level 2 = 1000, Level 3 = 5000, Level 4 = 10000
   const getNextLevelTarget = (currentLevel: number) => {
     switch (currentLevel) {
-      case 1: return 500;
-      case 2: return 2000;
-      case 3: return 10000;
-      case 4: return 50000;
-      default: return 500; // Default to 500 for level 1
+      case 1: return 100;
+      case 2: return 1000;
+      case 3: return 5000;
+      case 4: return 10000;
+      default: return 100; // Default to 100 for level 1
     }
   };
   

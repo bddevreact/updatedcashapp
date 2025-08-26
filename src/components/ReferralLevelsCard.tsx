@@ -14,39 +14,47 @@ const ReferralLevelsCard: React.FC<ReferralLevelsCardProps> = ({
   const referralLevels = [
     {
       level: 1,
-      required: 500,
+      required: 100,
       bonus: 200,
       xp: 100,
       color: 'text-green-400',
       bgColor: 'bg-green-400/10',
-      borderColor: 'border-green-400/20'
+      borderColor: 'border-green-400/20',
+      bengaliRequired: '১০০',
+      bengaliBonus: '২০০'
     },
     {
       level: 2,
-      required: 2000,
+      required: 1000,
       bonus: 500,
       xp: 200,
       color: 'text-blue-400',
       bgColor: 'bg-blue-400/10',
-      borderColor: 'border-blue-400/20'
+      borderColor: 'border-blue-400/20',
+      bengaliRequired: '১০০০',
+      bengaliBonus: '৫০০'
     },
     {
       level: 3,
-      required: 10000,
+      required: 5000,
       bonus: 1500,
       xp: 500,
       color: 'text-purple-400',
       bgColor: 'bg-purple-400/10',
-      borderColor: 'border-purple-400/20'
+      borderColor: 'border-purple-400/20',
+      bengaliRequired: '৫০০০',
+      bengaliBonus: '১৫০০'
     },
     {
       level: 4,
-      required: 50000,
-      bonus: 5000,
+      required: 10000,
+      bonus: 3000,
       xp: 1000,
       color: 'text-gold',
       bgColor: 'bg-gold/10',
-      borderColor: 'border-gold/20'
+      borderColor: 'border-gold/20',
+      bengaliRequired: '১০০০০',
+      bengaliBonus: '৩০০০'
     }
   ];
 
@@ -169,7 +177,7 @@ const ReferralLevelsCard: React.FC<ReferralLevelsCardProps> = ({
       <div className="mt-4 p-3 bg-gradient-to-r from-gold/10 to-yellow-500/10 border border-gold/20 rounded-lg">
         <div className="flex items-center justify-between">
           <span className="text-sm font-semibold text-gold">Total Potential Earnings:</span>
-          <span className="text-lg font-bold text-gold">৳7,200</span>
+          <span className="text-lg font-bold text-gold">৳5,200</span>
         </div>
         <p className="text-xs text-gray-400 mt-1">
           Complete all levels to earn maximum rewards!
