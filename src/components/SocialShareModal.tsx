@@ -216,7 +216,7 @@ export default function SocialShareModal({
   return (
     <AnimatePresence>
       {isOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-2">
           {/* Backdrop */}
           <motion.div
             initial={{ opacity: 0 }}
@@ -231,50 +231,48 @@ export default function SocialShareModal({
             initial={{ scale: 0.9, opacity: 0, y: 20 }}
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.9, opacity: 0, y: 20 }}
-            className="relative w-full max-w-md bg-navy border border-white/20 rounded-2xl shadow-2xl overflow-hidden"
+            className="relative w-full max-w-sm bg-navy border border-white/20 rounded-xl shadow-2xl overflow-hidden"
           >
             {/* Header */}
-            <div className="p-6 border-b border-white/10">
+            <div className="p-3 border-b border-white/10">
               <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold text-white flex items-center gap-2">
-                  <Share2 className="w-5 h-5 text-gold" />
-                  Share Your Referral Link
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Share2 className="w-4 h-4 text-gold" />
+                  Share Referral Link
                 </h3>
                 <button
                   onClick={onClose}
-                  className="p-2 hover:bg-white/10 rounded-lg transition-colors"
+                  className="p-1 hover:bg-white/10 rounded transition-colors"
                 >
-                  <X className="w-5 h-5 text-gray-400" />
+                  <X className="w-4 h-4 text-gray-400" />
                 </button>
               </div>
-                             <p className="text-gray-400 text-sm mt-2">
-                 Share your referral link across all social media platforms
-                 <br />
-                 <span className="text-xs">সব সোশ্যাল মিডিয়ায় আপনার রেফারেল লিংক শেয়ার করুন</span>
-               </p>
+              <p className="text-gray-400 text-xs mt-1">
+                Share across social media platforms
+              </p>
             </div>
 
             {/* Referral Link Display */}
-            <div className="p-6 border-b border-white/10">
-              <div className="flex items-center gap-2 mb-3">
+            <div className="p-3 border-b border-white/10">
+              <div className="flex items-center gap-2 mb-2">
                 <input
                   type="text"
                   value={referralLink}
                   readOnly
-                  className="flex-1 bg-gray-800 text-white px-3 py-2 rounded-lg text-sm border border-gray-600 focus:border-gold focus:outline-none"
+                  className="flex-1 bg-gray-800 text-white px-2 py-1 rounded text-xs border border-gray-600 focus:border-gold focus:outline-none"
                 />
                 <button
                   onClick={copyReferralLink}
-                  className="bg-gradient-to-r from-gold to-yellow-500 text-navy px-3 py-2 rounded-lg hover:from-yellow-400 hover:to-gold transition-all duration-300"
+                  className="bg-gradient-to-r from-gold to-yellow-500 text-navy px-2 py-1 rounded hover:from-yellow-400 hover:to-gold transition-all duration-300"
                 >
-                  {copied ? <CheckCircle className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                  {copied ? <CheckCircle className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
                 </button>
               </div>
               
               {referralCode && (
                 <div className="flex items-center gap-2">
-                  <span className="text-gray-400 text-sm">Referral Code:</span>
-                  <span className="bg-gold/20 text-gold px-2 py-1 rounded text-sm font-mono">
+                  <span className="text-gray-400 text-xs">Code:</span>
+                  <span className="bg-gold/20 text-gold px-2 py-0.5 rounded text-xs font-mono">
                     {referralCode}
                   </span>
                 </div>
@@ -282,32 +280,32 @@ export default function SocialShareModal({
             </div>
 
             {/* Social Platforms Grid */}
-            <div className="p-6">
-              <div className="grid grid-cols-3 gap-3">
-                {socialPlatforms.map((platform) => (
+            <div className="p-3">
+              <div className="grid grid-cols-4 gap-2">
+                {socialPlatforms.slice(0, 8).map((platform) => (
                   <motion.button
                     key={platform.name}
                     onClick={() => handleShare(platform)}
                     whileHover={{ scale: 1.05 }}
                     whileTap={{ scale: 0.95 }}
-                    className={`relative p-4 rounded-xl border border-white/10 hover:border-white/30 transition-all duration-300 ${
-                      selectedPlatform === platform.name ? 'ring-2 ring-gold' : ''
+                    className={`relative p-2 rounded-lg border border-white/10 hover:border-white/30 transition-all duration-300 ${
+                      selectedPlatform === platform.name ? 'ring-1 ring-gold' : ''
                     }`}
                   >
-                    <div className={`w-12 h-12 ${platform.color} rounded-lg flex items-center justify-center text-2xl mb-2 mx-auto`}>
+                    <div className={`w-8 h-8 ${platform.color} rounded-lg flex items-center justify-center text-lg mb-1 mx-auto`}>
                       {platform.icon}
                     </div>
                     <div className="text-center">
-                      <div className="text-white text-xs font-medium">
+                      <div className="text-white text-xs font-medium truncate">
                         {platform.name}
                       </div>
                       {selectedPlatform === platform.name && (
                         <motion.div
                           initial={{ scale: 0 }}
                           animate={{ scale: 1 }}
-                          className="absolute -top-1 -right-1 w-6 h-6 bg-green-500 rounded-full flex items-center justify-center"
+                          className="absolute -top-1 -right-1 w-4 h-4 bg-green-500 rounded-full flex items-center justify-center"
                         >
-                          <CheckCircle className="w-4 h-4 text-white" />
+                          <CheckCircle className="w-3 h-3 text-white" />
                         </motion.div>
                       )}
                     </div>
@@ -317,20 +315,20 @@ export default function SocialShareModal({
             </div>
 
             {/* Quick Actions */}
-            <div className="p-6 border-t border-white/10">
-              <div className="flex gap-3">
+            <div className="p-3 border-t border-white/10">
+              <div className="flex gap-2">
                 <button
                   onClick={copyReferralText}
-                  className="flex-1 bg-gradient-to-r from-purple-500 to-purple-600 text-white py-3 rounded-lg hover:from-purple-600 hover:to-purple-700 transition-all duration-300 flex items-center justify-center gap-2 font-semibold"
+                  className="flex-1 bg-gradient-to-r from-purple-500 to-purple-600 text-white py-2 rounded-lg hover:from-purple-600 hover:to-purple-700 transition-all duration-300 flex items-center justify-center gap-1 text-xs font-semibold"
                 >
-                  <Copy className="w-4 h-4" />
-                  Copy Full Text
+                  <Copy className="w-3 h-3" />
+                  Copy Text
                 </button>
                 <button
                   onClick={() => window.open(referralLink, '_blank')}
-                  className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white py-3 rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-300 flex items-center justify-center gap-2 font-semibold"
+                  className="flex-1 bg-gradient-to-r from-blue-500 to-blue-600 text-white py-2 rounded-lg hover:from-blue-600 hover:to-blue-700 transition-all duration-300 flex items-center justify-center gap-1 text-xs font-semibold"
                 >
-                  <ExternalLink className="w-4 h-4" />
+                  <ExternalLink className="w-3 h-3" />
                   Open Link
                 </button>
               </div>
@@ -342,10 +340,10 @@ export default function SocialShareModal({
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 20 }}
-                className="absolute bottom-4 left-4 right-4 bg-green-500 text-white p-3 rounded-lg flex items-center gap-2"
+                className="absolute bottom-2 left-2 right-2 bg-green-500 text-white p-2 rounded-lg flex items-center gap-2"
               >
-                                 <CheckCircle className="w-4 h-4" />
-                 <span className="text-sm font-medium">Copied to clipboard! / ক্লিপবোর্ডে কপি হয়েছে!</span>
+                <CheckCircle className="w-3 h-3" />
+                <span className="text-xs font-medium">Copied to clipboard!</span>
               </motion.div>
             )}
           </motion.div>
