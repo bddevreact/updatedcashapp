@@ -1,28 +1,10 @@
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, ContextTypes, filters
 import os
-import asyncio
-from supabase import create_client, Client
-from datetime import datetime, timedelta
-from dotenv import load_dotenv
-
-# Load environment variables
-load_dotenv()
+from datetime import datetime
 
 # Bot token (আপনার দেওয়া টোকেন)
 TOKEN = "8214925584:AAGzxmpSxFTGmvU-L778DNxUJ35QUR5dDZU"
-
-# Supabase configuration from environment variables
-SUPABASE_URL = os.getenv('VITE_SUPABASE_URL') or "https://your-project.supabase.co"
-SUPABASE_KEY = os.getenv('VITE_SUPABASE_ANON_KEY') or "your-anon-key"
-
-# Initialize Supabase client
-try:
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    print(f"✅ Supabase connected: {SUPABASE_URL}")
-except Exception as e:
-    print(f"❌ Supabase connection failed: {e}")
-    supabase = None
 
 # /start কমান্ড হ্যান্ডলার
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -57,10 +39,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # New member join handler
 async def handle_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not supabase:
-        print("❌ Supabase not connected - cannot track member")
-        return
-        
     try:
         chat = update.message.chat
         new_members = update.message.new_chat_members
@@ -77,68 +55,29 @@ async def handle_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
             join_date = datetime.now()
             
             print(f"👤 New member joined: {username} (ID: {user_id}) in chat: {chat.title}")
+            print(f"📅 Join time: {join_date}")
+            print(f"👤 User details: {first_name} {last_name}")
+            print("---")
             
-            # Check if user already exists
-            existing_user = supabase.table('users').select('*').eq('telegram_id', user_id).execute()
+            # Send welcome message to the group
+            welcome_message = (
+                f"🎉 <b>স্বাগতম {first_name}!</b>\n\n"
+                f"আপনি আমাদের Cash Points কমিউনিটিতে যোগ দিয়েছেন।\n"
+                f"💰 রিওয়ার্ড অর্জন শুরু করুন এখনই!\n\n"
+                f"👉 <a href='https://super-donut-5e4873.netlify.app/'>Mini App খুলুন</a>"
+            )
             
-            if existing_user.data:
-                # User exists - check for rejoin
-                user_data = existing_user.data[0]
-                
-                # Check if there's a recent referral
-                recent_referral = supabase.table('referrals').select('*').eq('referred_id', user_id).execute()
-                
-                if recent_referral.data:
-                    referral_data = recent_referral.data[0]
-                    referrer_id = referral_data['referrer_id']
-                    
-                    # Update referral status
-                    supabase.table('referrals').update({
-                        'status': 'verified',
-                        'updated_at': join_date.isoformat(),
-                        'rejoin_count': referral_data.get('rejoin_count', 0) + 1,
-                        'is_active': True,
-                        'leave_date': None
-                    }).eq('id', referral_data['id']).execute()
-                    
-                    # Send notification to referrer
-                    supabase.table('notifications').insert({
-                        'user_id': referrer_id,
-                        'type': 'rejoin_detected',
-                        'title': 'Member Rejoined',
-                        'message': f'User {username} rejoined the group. No reward given.',
-                        'is_read': False,
-                        'created_at': join_date.isoformat()
-                    }).execute()
-                    
-                    print(f"🔄 Rejoin detected for user {username} (ID: {user_id})")
-                else:
-                    print(f"ℹ️ Existing user {username} joined but no referral found")
-            else:
-                # New user - create user record
-                supabase.table('users').insert({
-                    'telegram_id': user_id,
-                    'username': username,
-                    'first_name': first_name,
-                    'last_name': last_name,
-                    'created_at': join_date.isoformat(),
-                    'balance': 0,
-                    'energy': 100,
-                    'level': 1,
-                    'experience_points': 0
-                }).execute()
-                
-                print(f"🆕 New user {username} (ID: {user_id}) created in database")
+            await update.message.reply_text(
+                welcome_message,
+                parse_mode='HTML',
+                disable_web_page_preview=True
+            )
                 
     except Exception as e:
         print(f"❌ Error handling new member: {e}")
 
 # Member left handler
 async def handle_member_left(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not supabase:
-        print("❌ Supabase not connected - cannot track member")
-        return
-        
     try:
         chat = update.message.chat
         left_member = update.message.left_chat_member
@@ -151,29 +90,14 @@ async def handle_member_left(update: Update, context: ContextTypes.DEFAULT_TYPE)
         leave_date = datetime.now()
         
         print(f"👋 User left: {username} (ID: {user_id}) from chat: {chat.title}")
-        
-        # Update user status and referral records
-        supabase.table('users').update({
-            'is_active': False,
-            'last_activity': leave_date.isoformat()
-        }).eq('telegram_id', user_id).execute()
-        
-        # Update referral records
-        supabase.table('referrals').update({
-            'is_active': False,
-            'leave_date': leave_date.isoformat()
-        }).eq('referred_id', user_id).execute()
-        
-        print(f"📝 Updated database for user {username} (ID: {user_id})")
+        print(f"📅 Leave time: {leave_date}")
+        print("---")
         
     except Exception as e:
         print(f"❌ Error handling member left: {e}")
 
 # Referral tracking from messages
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not supabase:
-        return
-        
     try:
         message = update.message
         user_id = message.from_user.id
@@ -188,19 +112,47 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if ref_match:
                 referral_code = ref_match.group(1)
                 
-                # Store referral link click
-                supabase.table('referral_link_clicks').insert({
-                    'referral_code': referral_code,
-                    'clicker_id': user_id,
-                    'chat_id': chat_id,
-                    'clicked_at': datetime.now().isoformat(),
-                    'source': 'telegram_message'
-                }).execute()
-                
                 print(f"🔗 Referral link clicked by user {user_id} with code {referral_code}")
+                print(f"💬 Message: {text[:100]}...")
+                print("---")
                 
     except Exception as e:
         print(f"❌ Error handling message: {e}")
+
+# Help command
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    help_text = (
+        "🤖 <b>Cash Points Bot Commands:</b>\n\n"
+        "📋 <b>Available Commands:</b>\n"
+        "/start - Start the bot and get main menu\n"
+        "/help - Show this help message\n\n"
+        "🔍 <b>Bot Features:</b>\n"
+        "✅ Automatic join/leave tracking\n"
+        "✅ Referral link monitoring\n"
+        "✅ Welcome messages for new members\n"
+        "✅ Mini App integration\n\n"
+        "📊 <b>Tracking Status:</b>\n"
+        "👥 Members joined: Tracked\n"
+        "👋 Members left: Tracked\n"
+        "🔗 Referral links: Monitored\n\n"
+        "💡 <b>Tip:</b> Add the bot to your group as admin for full functionality!"
+    )
+    
+    await update.message.reply_text(help_text, parse_mode='HTML')
+
+# Status command
+async def status_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    status_text = (
+        "📊 <b>Bot Status:</b>\n\n"
+        "🟢 <b>Bot Status:</b> Running\n"
+        "🟢 <b>Join Tracking:</b> Active\n"
+        "🟢 <b>Leave Tracking:</b> Active\n"
+        "🟢 <b>Referral Monitoring:</b> Active\n\n"
+        "📅 <b>Last Update:</b> " + datetime.now().strftime("%Y-%m-%d %H:%M:%S") + "\n\n"
+        "✅ <b>All systems operational!</b>"
+    )
+    
+    await update.message.reply_text(status_text, parse_mode='HTML')
 
 def main():
     # অ্যাপ্লিকেশন তৈরি
@@ -208,6 +160,8 @@ def main():
 
     # কমান্ড হ্যান্ডলার যোগ করুন
     app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("status", status_command))
     
     # Member join/leave handlers
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, handle_new_member))
@@ -219,7 +173,9 @@ def main():
     print("✅ বট চালু হচ্ছে... টেলিগ্রামে /start লিখুন।")
     print("🔍 Join/Leave tracking enabled")
     print("📊 Referral link tracking enabled")
-    print(f"🔗 Supabase URL: {SUPABASE_URL}")
+    print("💬 Welcome messages enabled")
+    print("📋 Commands: /start, /help, /status")
+    print("---")
     # পলিং শুরু করুন
     app.run_polling()
 

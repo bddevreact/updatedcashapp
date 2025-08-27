@@ -1,5 +1,5 @@
-import React, { useState, useEffect } from 'react';
-import { Users, Share2, Copy, TrendingUp, Award, Target, Calendar, DollarSign, AlertTriangle, CheckCircle, Clock, RefreshCw, Eye, Shield, Bot, UserCheck, UserX, MessageCircle, Settings, Zap, Activity, Info, BarChart3, Link } from 'lucide-react';
+import { useState, useEffect } from 'react';
+import { Users, Share2, Copy, TrendingUp, Award, Target, Calendar, DollarSign, AlertTriangle, CheckCircle, Clock, RefreshCw, Eye, Shield, Bot, UserCheck, UserX, MessageCircle, Settings, Zap, Activity, Info, BarChart3 } from 'lucide-react';
 import { useUserStore } from '../store/userStore';
 import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -40,12 +40,12 @@ interface ReferralStats {
 }
 
 export default function Referrals() {
-  const { stats, addNotification, referralCode } = useUserStore();
+  const { addNotification, referralCode } = useUserStore();
   const [copied, setCopied] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'analytics' | 'enhanced' | 'settings'>('overview');
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
-  const [liveMemberCount, setLiveMemberCount] = useState(156);
+
   const [isLive, setIsLive] = useState(true);
   const [showSocialShareModal, setShowSocialShareModal] = useState(false);
   
@@ -339,19 +339,19 @@ export default function Referrals() {
 
   // Generate individual referral link for current user
   const generateIndividualReferralLink = () => {
-    if (!individualReferralConfig.base_url || !telegramId) return '';
+    if (!telegramId) return '';
     
-    // Create unique referral link with user's telegram ID and referral code
-    const uniqueIdentifier = referralCode || telegramId;
-    const trackingParams = individualReferralConfig.tracking_enabled ? 
-      `&source=bt_app&tracking=referral&unique=${Date.now()}` : '';
-    const individualLink = `${individualReferralConfig.base_url}?ref=${uniqueIdentifier}&user=${telegramId}${trackingParams}`;
+    // Get user's unique referral code from database
+    const userReferralCode = referralCode || `BT${telegramId.slice(-6).toUpperCase()}`;
+    
+    // Create bot referral link with auto-start trigger
+    const botUsername = 'CashPoinntbot'; // Update with your actual bot username
+    const individualLink = `https://t.me/${botUsername}?start=${userReferralCode}`;
     return individualLink;
   };
 
-  // Group-based referral system (fallback if individual system not configured)
-  const groupUrl = `https://t.me/BTCommunityGroup`;
-  const referralLink = individualReferralConfig.base_url ? generateIndividualReferralLink() : `https://t.me/share/url?url=${encodeURIComponent(groupUrl)}&text=Join Cash Points Group and earn real money in BDT! Use my referral link.`;
+  // Enhanced referral system with auto-start triggers
+  const referralLink = generateIndividualReferralLink();
   
   // Mock real-time data (in real app, this would come from WebSocket/API)
   const [referralStats, setReferralStats] = useState<ReferralStats>({
@@ -393,7 +393,7 @@ export default function Referrals() {
        await loadGroupMembers();
        
        // Check for duplicate join warnings
-       const { data: notifications, error: notifError } = await supabase
+       const { data: notifications } = await supabase
          .from('notifications')
          .select('*')
          .eq('user_id', telegramId)
@@ -1030,7 +1030,7 @@ export default function Referrals() {
               Recent Referral Activity
             </h3>
             <div className="space-y-3">
-              {groupMembers.slice(0, 5).map((member, index) => (
+              {groupMembers.slice(0, 5).map((member) => (
                 <div key={member.id} className="flex items-center justify-between p-3 bg-gray-800/50 rounded-lg">
                   <div className="flex items-center gap-3">
                     <img 
@@ -1835,7 +1835,7 @@ export default function Referrals() {
       <div className="glass p-5 mb-6 border border-white/10">
         <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
           <Share2 className="w-5 h-5 text-gold" />
-          {individualReferralConfig.base_url ? 'Your Individual Referral Link' : 'Your Group Referral Link'}
+          Your Enhanced Referral Link
         </h3>
         
         {/* Referral Link Display */}
@@ -1861,7 +1861,7 @@ export default function Referrals() {
             className="flex-1 bg-gradient-to-r from-blue-600 to-blue-700 text-white py-3 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all duration-300 flex items-center justify-center gap-2 font-semibold"
         >
           <Share2 className="w-4 h-4" />
-            {individualReferralConfig.base_url ? 'Share Your Referral Link' : 'Share Group Link'}
+            Share Your Referral Link
         </button>
         </div>
 
@@ -1905,7 +1905,7 @@ export default function Referrals() {
               <div className="text-center p-3 bg-green-500/10 rounded-lg border border-green-500/20">
                 <div className="text-2xl font-bold text-green-400">{referralStats.verifiedMembers}</div>
                 <div className="text-xs text-green-300">Verified Members</div>
-                <div className="text-xs text-green-400">৳{referralStats.verifiedMembers * (individualReferralConfig.referral_reward || 50)} earned</div>
+                <div className="text-xs text-green-400">৳{referralStats.verifiedMembers * 2} earned</div>
               </div>
               <div className="text-center p-3 bg-blue-500/10 rounded-lg border border-blue-500/20">
                 <div className="text-2xl font-bold text-blue-400">{referralStats.activeMembers}</div>

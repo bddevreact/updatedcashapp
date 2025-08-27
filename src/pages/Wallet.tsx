@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { ArrowUpRight, ArrowDownLeft, CreditCard, Bitcoin, DollarSign, CheckSquare, Users, TrendingUp, Shield, Zap, Smartphone, Building, ChevronDown, AlertCircle, CheckCircle2, Clock, RefreshCw, Activity } from 'lucide-react';
+import { ArrowUpRight, ArrowDownLeft, CreditCard, Bitcoin, DollarSign, CheckSquare, Users, TrendingUp, Shield, Zap, Smartphone, Building, ChevronDown, AlertCircle, CheckCircle2, Clock, RefreshCw } from 'lucide-react';
 import { useUserStore } from '../store/userStore';
 import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -7,7 +7,7 @@ import { supabase } from '../lib/supabase';
 import { sendUserNotification } from '../lib/notifications';
 
 export default function Wallet() {
-  const { balance, updateBalance, telegramId, addNotification, stats } = useUserStore();
+  const { balance, telegramId, addNotification, stats } = useUserStore();
   
   // Calculate balances from available data
   const balances = {
@@ -17,7 +17,7 @@ export default function Wallet() {
   };
   const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw'>('deposit');
   const [amount, setAmount] = useState('');
-  const [paymentMethod, setPaymentMethod] = useState<'bkash' | 'nagad' | 'rocket' | 'bank' | 'crypto'>('bkash');
+  const [paymentMethod] = useState<'bkash' | 'nagad' | 'rocket' | 'bank' | 'crypto'>('bkash');
   const [withdrawMethod, setWithdrawMethod] = useState<'bkash' | 'nagad' | 'rocket' | 'bank' | 'crypto'>('bkash');
   const [accountNumber, setAccountNumber] = useState('');
   const [accountName, setAccountName] = useState('');
@@ -29,7 +29,7 @@ export default function Wallet() {
   const [withdrawalStatus, setWithdrawalStatus] = useState<'idle' | 'processing' | 'success' | 'failed'>('idle');
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
-  const [liveTransactions, setLiveTransactions] = useState<any[]>([]);
+  const [liveTransactions] = useState<any[]>([]);
   const [isLive, setIsLive] = useState(true);
 
   // Real-time updates hook
@@ -118,147 +118,7 @@ export default function Wallet() {
     { id: 'matic', name: 'Polygon', symbol: 'MATIC', icon: '🔷' }
   ];
 
-  const handleDeposit = async () => {
-    if (!amount || parseFloat(amount) < getDepositMethodInfo().minAmount) {
-      addNotification({
-        type: 'error',
-        title: 'Invalid Amount',
-        message: `Minimum deposit amount is ৳${getDepositMethodInfo().minAmount}`
-      });
-      return;
-    }
 
-    if (paymentMethod === 'bank' && (!selectedBank || !accountName || !accountNumber)) {
-      addNotification({
-        type: 'error',
-        title: 'Missing Bank Details',
-        message: 'Please fill in all bank details'
-      });
-      return;
-    }
-
-    if (paymentMethod === 'crypto' && (!selectedCrypto || !accountNumber)) {
-      addNotification({
-        type: 'error',
-        title: 'Missing Crypto Details',
-        message: 'Please select cryptocurrency and enter wallet address'
-      });
-      return;
-    }
-
-    if (paymentMethod !== 'bank' && paymentMethod !== 'crypto' && !accountNumber) {
-      addNotification({
-        type: 'error',
-        title: 'Missing Mobile Number',
-        message: 'Please enter mobile number'
-      });
-      return;
-    }
-
-    setIsProcessing(true);
-
-    try {
-      // Create deposit request in database - use user_activities for now
-      const depositData: any = {
-        amount: parseFloat(amount),
-        method: paymentMethod,
-        account_number: accountNumber,
-        status: 'pending'
-      };
-
-      // Add optional fields if they have values
-      if (accountName && accountName.trim()) {
-        depositData.account_name = accountName.trim();
-      } else {
-        // For non-bank methods, use appropriate default values
-        if (paymentMethod === 'bank') {
-          // Bank method requires account name
-          throw new Error('Account holder name is required for bank deposits');
-        } else if (paymentMethod === 'crypto') {
-          // For crypto, use crypto symbol
-          depositData.account_name = selectedCrypto ? `${selectedCrypto} Wallet` : 'Crypto Wallet';
-        } else {
-          // For mobile money, use the method name
-          depositData.account_name = paymentMethod.charAt(0).toUpperCase() + paymentMethod.slice(1);
-        }
-      }
-      
-      if (selectedBank && selectedBank.trim()) depositData.bank_name = selectedBank.trim();
-      if (selectedCrypto && selectedCrypto.trim()) depositData.crypto_symbol = selectedCrypto.trim();
-
-      // Log the deposit data for debugging
-      console.log('Creating deposit with data:', depositData);
-
-      const { error } = await supabase
-        .from('user_activities')
-        .insert([{
-          user_id: telegramId,
-          activity_type: 'deposit_request',
-          activity_data: JSON.stringify(depositData),
-          created_at: new Date().toISOString()
-        }]);
-
-      if (error) throw error;
-
-      // Show success notification
-      addNotification({
-        type: 'success',
-        title: 'Deposit Submitted!',
-        message: `Deposit request of ৳${amount} submitted successfully!`
-      });
-
-      // Send notification to database for admin review
-      if (telegramId) {
-        await sendUserNotification(
-          telegramId,
-          'info',
-          'Deposit Request Submitted 📥',
-          `Your deposit request of ৳${amount} has been submitted and is under review.`
-        );
-
-        // Send notification for successful deposit
-        await sendUserNotification(
-          telegramId,
-          'success',
-          'Deposit Completed Successfully! 💰',
-          `Your deposit of ৳${amount} has been processed and added to your balance.`
-        );
-      }
-
-      // Reset form
-      setAmount('');
-      setAccountNumber('');
-      setAccountName('');
-      setSelectedBank('');
-      setSelectedCrypto('');
-
-      // Refresh user balance
-      forceUpdate();
-
-      // Load updated transactions
-      loadRecentTransactions();
-
-      // Send notification about balance update
-      if (telegramId) {
-        await sendUserNotification(
-          telegramId,
-          'success',
-          'Balance Updated 💰',
-          `Your balance has been updated. New balance: ${formatCurrency(balance - parseFloat(amount))}`
-        );
-      }
-
-    } catch (error: any) {
-      console.error('Error creating deposit:', error);
-      addNotification({
-        type: 'error',
-        title: 'Deposit Failed',
-        message: 'Failed to submit deposit request. Please try again.'
-      });
-    } finally {
-      setIsProcessing(false);
-    }
-  };
 
   const handleWithdraw = async () => {
     if (!amount || parseFloat(amount) < getWithdrawMethodInfo().minAmount) {

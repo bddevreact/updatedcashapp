@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { TrendingUp, Search, Filter, CheckCircle, XCircle, Eye, Clock, AlertCircle, Plus, Edit, Trash2, Save, X, Copy, Settings, RefreshCw, Link, Users, DollarSign, Target, Award } from 'lucide-react';
+import { TrendingUp, Search, CheckCircle, XCircle, Eye, Clock, AlertCircle, Plus, Edit, Trash2, Save, X, Copy, Link, DollarSign, Target } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useUserStore } from '../../store/userStore';
