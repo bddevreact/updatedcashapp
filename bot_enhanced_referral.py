@@ -88,6 +88,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     referrer_id = None
     referral_code = None
     
+    print(f"🔍 Start parameter: {start_param}")
+    print(f"🔍 Context args: {context.args}")
+    
     if start_param:
         # Handle different referral formats
         if start_param.startswith('ref_'):
@@ -106,15 +109,43 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     if result.data:
                         referrer_id = result.data[0]['user_id']
                         print(f"🔗 Referrer found: {referrer_id} for code: {referral_code}")
+                    else:
+                        print(f"❌ Referral code {referral_code} not found in database")
+                        # Try to find by user ID pattern (BT + last 6 digits of user ID)
+                        if len(referral_code) >= 8 and referral_code.startswith('BT'):
+                            try:
+                                # Extract user ID from referral code (BT + 6 digits)
+                                user_id_part = referral_code[2:8]  # Get the 6 digits after BT
+                                print(f"🔍 Trying to find user with ID ending in: {user_id_part}")
+                                
+                                # Search for users with telegram_id ending in these digits
+                                users_result = supabase.table('users').select('telegram_id').execute()
+                                for user in users_result.data:
+                                    user_id_str = str(user['telegram_id'])
+                                    if user_id_str.endswith(user_id_part):
+                                        referrer_id = user['telegram_id']
+                                        print(f"🔗 Found referrer by pattern match: {referrer_id}")
+                                        break
+                                
+                                if not referrer_id:
+                                    print(f"❌ No user found with ID ending in {user_id_part}")
+                            except Exception as pattern_error:
+                                print(f"❌ Error in pattern matching: {pattern_error}")
                 except Exception as e:
                     print(f"❌ Error finding referrer: {e}")
     
     # Store referral relationship if referrer found
+    print(f"🔍 Referrer ID: {referrer_id}")
+    print(f"🔍 User ID: {user_id}")
+    print(f"🔍 Referral code: {referral_code}")
+    
     if referrer_id and int(referrer_id) != user_id:
+        print(f"✅ Valid referral detected: {referrer_id} → {user_id}")
         if supabase:
             try:
                 # Check if referral already exists
                 existing_referral = supabase.table('referrals').select('*').eq('referred_id', user_id).execute()
+                print(f"🔍 Existing referrals for user {user_id}: {len(existing_referral.data)}")
                 
                 if not existing_referral.data:
                     # Create new referral record with pending status
@@ -131,8 +162,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         'group_join_verified': False
                     }
                     
-                    supabase.table('referrals').insert(referral_data).execute()
+                    print(f"📝 Creating referral with data: {referral_data}")
+                    result = supabase.table('referrals').insert(referral_data).execute()
                     print(f"📝 Referral relationship created: {referrer_id} → {user_id} (pending_group_join)")
+                    print(f"📝 Insert result: {result.data}")
                     
                     # Show force join message
                     force_join_message = (
@@ -190,10 +223,39 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     }).eq('id', referral['id']).execute()
                     
                     # Give reward to referrer (+2 taka)
-                    current_balance = supabase.table('users').select('balance').eq('telegram_id', referrer_id).execute().data[0]['balance']
-                    supabase.table('users').update({
-                        'balance': current_balance + 2
-                    }).eq('telegram_id', referrer_id).execute()
+                    print(f"💰 Processing reward for referrer: {referrer_id}")
+                    
+                    # Get current balance
+                    balance_result = supabase.table('users').select('balance').eq('telegram_id', referrer_id).execute()
+                    if balance_result.data:
+                        current_balance = balance_result.data[0]['balance']
+                        print(f"💰 Referrer current balance: {current_balance}")
+                        
+                        # Calculate new balance
+                        new_balance = current_balance + 2
+                        print(f"💰 New balance will be: {new_balance}")
+                        
+                        # Update balance
+                        update_result = supabase.table('users').update({
+                            'balance': new_balance
+                        }).eq('telegram_id', referrer_id).execute()
+                        
+                        print(f"💰 Balance update result: {update_result.data}")
+                        
+                        # Verify the update
+                        verify_result = supabase.table('users').select('balance').eq('telegram_id', referrer_id).execute()
+                        if verify_result.data:
+                            actual_balance = verify_result.data[0]['balance']
+                            print(f"💰 Actual balance after update: {actual_balance}")
+                            
+                            if actual_balance == new_balance:
+                                print(f"✅ Balance update successful: {current_balance} → {actual_balance}")
+                            else:
+                                print(f"❌ Balance update failed! Expected: {new_balance}, Got: {actual_balance}")
+                        else:
+                            print(f"❌ Could not verify balance update for referrer: {referrer_id}")
+                    else:
+                        print(f"❌ Could not get current balance for referrer: {referrer_id}")
                     
                     # Send notification to referrer
                     supabase.table('notifications').insert({
@@ -359,10 +421,39 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                         }).eq('id', referral['id']).execute()
                         
                         # Give reward to referrer (+2 taka)
-                        current_balance = supabase.table('users').select('balance').eq('telegram_id', referrer_id).execute().data[0]['balance']
-                        supabase.table('users').update({
-                            'balance': current_balance + 2
-                        }).eq('telegram_id', referrer_id).execute()
+                        print(f"💰 Processing reward for referrer via callback: {referrer_id}")
+                        
+                        # Get current balance
+                        balance_result = supabase.table('users').select('balance').eq('telegram_id', referrer_id).execute()
+                        if balance_result.data:
+                            current_balance = balance_result.data[0]['balance']
+                            print(f"💰 Referrer current balance: {current_balance}")
+                            
+                            # Calculate new balance
+                            new_balance = current_balance + 2
+                            print(f"💰 New balance will be: {new_balance}")
+                            
+                            # Update balance
+                            update_result = supabase.table('users').update({
+                                'balance': new_balance
+                            }).eq('telegram_id', referrer_id).execute()
+                            
+                            print(f"💰 Balance update result: {update_result.data}")
+                            
+                            # Verify the update
+                            verify_result = supabase.table('users').select('balance').eq('telegram_id', referrer_id).execute()
+                            if verify_result.data:
+                                actual_balance = verify_result.data[0]['balance']
+                                print(f"💰 Actual balance after update: {actual_balance}")
+                                
+                                if actual_balance == new_balance:
+                                    print(f"✅ Balance update successful via callback: {current_balance} → {actual_balance}")
+                                else:
+                                    print(f"❌ Balance update failed via callback! Expected: {new_balance}, Got: {actual_balance}")
+                            else:
+                                print(f"❌ Could not verify balance update for referrer: {referrer_id}")
+                        else:
+                            print(f"❌ Could not get current balance for referrer: {referrer_id}")
                         
                         # Send notification to referrer
                         supabase.table('notifications').insert({
@@ -458,11 +549,19 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 parse_mode='HTML'
             )
             
-            # Edit the original message
-            await query.edit_message_text(
-                success_message,
-                parse_mode='HTML'
-            )
+            # Edit the original message with proper error handling
+            try:
+                await query.edit_message_text(
+                    success_message,
+                    parse_mode='HTML'
+                )
+            except Exception as edit_error:
+                print(f"⚠️ Could not edit message: {edit_error}")
+                # Send new message instead
+                await query.message.reply_text(
+                    success_message,
+                    parse_mode='HTML'
+                )
         else:
             # User is still not a member
             not_member_message = (
@@ -480,11 +579,20 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
-            await query.edit_message_text(
-                not_member_message,
-                reply_markup=reply_markup,
-                parse_mode='HTML'
-            )
+            try:
+                await query.edit_message_text(
+                    not_member_message,
+                    reply_markup=reply_markup,
+                    parse_mode='HTML'
+                )
+            except Exception as edit_error:
+                print(f"⚠️ Could not edit message: {edit_error}")
+                # Send new message instead
+                await query.message.reply_text(
+                    not_member_message,
+                    reply_markup=reply_markup,
+                    parse_mode='HTML'
+                )
 
 # Group command handler - always shows group link
 async def group_command(update: Update, context: ContextTypes.DEFAULT_TYPE):

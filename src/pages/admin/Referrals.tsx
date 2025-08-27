@@ -1,8 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { Target, Search, Filter, CheckCircle, XCircle, Eye, DollarSign, TrendingUp, Users, BarChart3, Shield, Activity, Info } from 'lucide-react';
+import { Target, Search, Filter, CheckCircle, XCircle, Eye, DollarSign, TrendingUp, Users, BarChart3, Shield, Activity, Info, Link, UserCheck, UserX, RefreshCw, Zap, Award, Calendar, Globe } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { motion } from 'framer-motion';
-import AdminReferralDashboard from '../../components/admin/AdminReferralDashboard';
 
 interface Referral {
   id: string;
@@ -15,6 +14,7 @@ interface Referral {
   referrer: {
     first_name: string;
     username: string;
+    referral_code?: string;
   };
   referred: {
     first_name: string;
@@ -22,54 +22,174 @@ interface Referral {
   };
 }
 
+interface ReferralCode {
+  id: string;
+  user_id: number;
+  referral_code: string;
+  is_active: boolean;
+  created_at: string;
+  total_clicks: number;
+  total_conversions: number;
+  user: {
+    first_name: string;
+    username: string;
+  };
+}
+
+interface EnhancedStats {
+  total: number;
+  pending: number;
+  verified: number;
+  rejected: number;
+  totalBonus: number;
+  totalReferralCodes: number;
+  activeReferralCodes: number;
+  totalGroupVerifications: number;
+  pendingGroupVerifications: number;
+  todayReferrals: number;
+  weekReferrals: number;
+  monthReferrals: number;
+  conversionRate: number;
+}
+
 export default function AdminReferrals() {
   const [referrals, setReferrals] = useState<Referral[]>([]);
+  const [referralCodes, setReferralCodes] = useState<ReferralCode[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
-  const [stats, setStats] = useState({
+  const [stats, setStats] = useState<EnhancedStats>({
     total: 0,
     pending: 0,
     verified: 0,
     rejected: 0,
-    totalBonus: 0
+    totalBonus: 0,
+    totalReferralCodes: 0,
+    activeReferralCodes: 0,
+    totalGroupVerifications: 0,
+    pendingGroupVerifications: 0,
+    todayReferrals: 0,
+    weekReferrals: 0,
+    monthReferrals: 0,
+    conversionRate: 0
   });
 
   // Add new state for enhanced analytics
   const [showEnhancedAnalytics, setShowEnhancedAnalytics] = useState(false);
-  const [activeView, setActiveView] = useState<'basic' | 'enhanced'>('basic');
+  const [activeView, setActiveView] = useState<'basic' | 'enhanced' | 'codes' | 'analytics'>('basic');
+  const [selectedPeriod, setSelectedPeriod] = useState<'today' | 'week' | 'month' | 'all'>('all');
 
   useEffect(() => {
-    loadReferrals();
-  }, []);
+    loadAllData();
+  }, [selectedPeriod]);
+
+  const loadAllData = async () => {
+    try {
+      setLoading(true);
+      await Promise.all([
+        loadReferrals(),
+        loadReferralCodes(),
+        loadEnhancedStats()
+      ]);
+    } catch (error) {
+      console.error('Error loading data:', error);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   const loadReferrals = async () => {
     try {
-      setLoading(true);
       const { data, error } = await supabase
         .from('referrals')
         .select(`
           *,
-          referrer:users!referrals_referrer_id_fkey(first_name, username),
+          referrer:users!referrals_referrer_id_fkey(first_name, username, referral_code),
           referred:users!referrals_referred_id_fkey(first_name, username)
         `)
         .order('created_at', { ascending: false });
 
       if (error) throw error;
       setReferrals(data || []);
-      
-      // Calculate stats
-      const total = data?.length || 0;
-      const pending = data?.filter(r => r.status === 'pending').length || 0;
-      const verified = data?.filter(r => r.status === 'verified').length || 0;
-      const rejected = data?.filter(r => r.status === 'rejected').length || 0;
-      const totalBonus = data?.reduce((sum, r) => sum + (r.referral_bonus || 0), 0) || 0;
-      
-      setStats({ total, pending, verified, rejected, totalBonus });
     } catch (error) {
       console.error('Error loading referrals:', error);
-    } finally {
-      setLoading(false);
+    }
+  };
+
+  const loadReferralCodes = async () => {
+    try {
+      const { data, error } = await supabase
+        .from('referral_codes')
+        .select(`
+          *,
+          user:users!referral_codes_user_id_fkey(first_name, username)
+        `)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      setReferralCodes(data || []);
+    } catch (error) {
+      console.error('Error loading referral codes:', error);
+    }
+  };
+
+  const loadEnhancedStats = async () => {
+    try {
+      // Load basic referral stats
+      const { data: referralsData, error: referralsError } = await supabase
+        .from('referrals')
+        .select('*');
+
+      if (referralsError) throw referralsError;
+
+      // Load referral codes stats
+      const { data: codesData, error: codesError } = await supabase
+        .from('referral_codes')
+        .select('*');
+
+      if (codesError) throw codesError;
+
+      // Load group membership verifications
+      const { data: verificationsData, error: verificationsError } = await supabase
+        .from('group_membership_verification')
+        .select('*');
+
+      if (verificationsError) {
+        console.warn('Group membership verification table not found:', verificationsError);
+      }
+
+      // Calculate period-based stats
+      const now = new Date();
+      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
+      const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
+
+      const todayReferrals = referralsData?.filter(r => new Date(r.created_at) >= today).length || 0;
+      const weekReferrals = referralsData?.filter(r => new Date(r.created_at) >= weekAgo).length || 0;
+      const monthReferrals = referralsData?.filter(r => new Date(r.created_at) >= monthAgo).length || 0;
+
+      // Calculate conversion rate
+      const totalClicks = codesData?.reduce((sum, code) => sum + (code.total_clicks || 0), 0) || 0;
+      const totalConversions = codesData?.reduce((sum, code) => sum + (code.total_conversions || 0), 0) || 0;
+      const conversionRate = totalClicks > 0 ? (totalConversions / totalClicks) * 100 : 0;
+
+      setStats({
+        total: referralsData?.length || 0,
+        pending: referralsData?.filter(r => r.status === 'pending').length || 0,
+        verified: referralsData?.filter(r => r.status === 'verified').length || 0,
+        rejected: referralsData?.filter(r => r.status === 'rejected').length || 0,
+        totalBonus: referralsData?.reduce((sum, r) => sum + (r.referral_bonus || 0), 0) || 0,
+        totalReferralCodes: codesData?.length || 0,
+        activeReferralCodes: codesData?.filter(c => c.is_active).length || 0,
+        totalGroupVerifications: verificationsData?.length || 0,
+        pendingGroupVerifications: verificationsData?.filter(v => v.status === 'pending').length || 0,
+        todayReferrals,
+        weekReferrals,
+        monthReferrals,
+        conversionRate
+      });
+    } catch (error) {
+      console.error('Error loading enhanced stats:', error);
     }
   };
 
@@ -78,7 +198,8 @@ export default function AdminReferrals() {
       referral.referrer?.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       referral.referred?.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       referral.referrer_id.toString().includes(searchTerm) ||
-      referral.referred_id.toString().includes(searchTerm);
+      referral.referred_id.toString().includes(searchTerm) ||
+      referral.referrer?.referral_code?.toLowerCase().includes(searchTerm.toLowerCase());
     
     const matchesFilter = filterStatus === 'all' || referral.status === filterStatus;
 
@@ -97,10 +218,26 @@ export default function AdminReferrals() {
 
       if (error) throw error;
       
-      // Reload referrals
-      loadReferrals();
+      // Reload data
+      loadAllData();
     } catch (error) {
       console.error('Error updating referral status:', error);
+    }
+  };
+
+  const handleReferralCodeToggle = async (codeId: string, isActive: boolean) => {
+    try {
+      const { error } = await supabase
+        .from('referral_codes')
+        .update({ is_active: isActive })
+        .eq('id', codeId);
+
+      if (error) throw error;
+      
+      // Reload data
+      loadAllData();
+    } catch (error) {
+      console.error('Error updating referral code status:', error);
     }
   };
 
@@ -134,6 +271,10 @@ export default function AdminReferrals() {
       case 'pending': return <div className="w-4 h-4 bg-yellow-400 rounded-full animate-pulse" />;
       default: return null;
     }
+  };
+
+  const generateReferralLink = (referralCode: string) => {
+    return `https://t.me/your_bot_username?start=${referralCode}`;
   };
 
   return (
@@ -174,7 +315,7 @@ export default function AdminReferrals() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
           >
-            Referrals Management
+            Enhanced Referrals Management
           </motion.h1>
           <motion.p 
             className="text-gray-400 text-lg"
@@ -182,11 +323,11 @@ export default function AdminReferrals() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            Manage and verify referral relationships in Cash Points
+            Manage referral system with group verification and enhanced analytics
           </motion.p>
 
           {/* View Toggle */}
-          <div className="mt-4 flex gap-2">
+          <div className="mt-4 flex gap-2 flex-wrap">
             <button
               onClick={() => setActiveView('basic')}
               className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 ${
@@ -207,86 +348,128 @@ export default function AdminReferrals() {
             >
               Enhanced Analytics
             </button>
+            <button
+              onClick={() => setActiveView('codes')}
+              className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 ${
+                activeView === 'codes'
+                  ? 'bg-gold text-navy'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              Referral Codes
+            </button>
+            <button
+              onClick={() => setActiveView('analytics')}
+              className={`px-4 py-2 rounded-lg font-medium transition-all duration-300 ${
+                activeView === 'analytics'
+                  ? 'bg-gold text-navy'
+                  : 'bg-gray-700 text-gray-300 hover:bg-gray-600'
+              }`}
+            >
+              Performance Analytics
+            </button>
           </div>
         </div>
 
-        {/* Basic Management View */}
-        {activeView === 'basic' && (
-          <>
-            {/* Stats Cards */}
-            <div className="grid grid-cols-1 md:grid-cols-5 gap-6 mb-8">
-              <motion.div 
-                className="glass p-6 border border-white/10 rounded-xl"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.3 }}
-              >
-                <div className="text-3xl font-bold text-white">{stats.total}</div>
-                <div className="text-gray-400">Total Referrals</div>
-              </motion.div>
-              
-              <motion.div 
-                className="glass p-6 border border-white/10 rounded-xl"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.4 }}
-              >
-                <div className="text-3xl font-bold text-yellow-400">{stats.pending}</div>
-                <div className="text-gray-400">Pending</div>
-              </motion.div>
-              
-              <motion.div 
-                className="glass p-6 border border-white/10 rounded-xl"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.5 }}
-              >
-                <div className="text-3xl font-bold text-green-400">{stats.verified}</div>
-                <div className="text-gray-400">Verified</div>
-              </motion.div>
-              
-              <motion.div 
-                className="glass p-6 border border-white/10 rounded-xl"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.6 }}
-              >
-                <div className="text-3xl font-bold text-red-400">{stats.rejected}</div>
-                <div className="text-gray-400">Rejected</div>
-              </motion.div>
-              
-              <motion.div 
-                className="glass p-6 border border-white/10 rounded-xl"
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                transition={{ duration: 0.5, delay: 0.7 }}
-              >
-                <div className="text-3xl font-bold text-white">{formatCurrency(stats.totalBonus)}</div>
-                <div className="text-gray-400">Total Bonus</div>
-              </motion.div>
-            </div>
+        {/* Enhanced Stats Dashboard */}
+        <motion.div 
+          className="glass p-6 border border-white/10 rounded-xl mb-6"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-semibold text-white flex items-center gap-2">
+              <BarChart3 className="w-5 h-5 text-gold" />
+              Enhanced Referral Statistics
+            </h3>
+            <button
+              onClick={loadAllData}
+              className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-all duration-300"
+            >
+              <RefreshCw className="w-4 h-4" />
+            </button>
+          </div>
 
-            {/* Controls */}
-            <div className="glass p-6 border border-white/10 rounded-xl mb-8">
-              <div className="flex flex-col md:flex-row gap-4 items-center justify-between">
-                <div className="flex flex-col md:flex-row gap-4 flex-1">
-                  {/* Search */}
-                  <div className="relative flex-1 max-w-md">
-                    <Search className="w-5 h-5 text-gray-400 absolute left-3 top-1/2 transform -translate-y-1/2" />
+          <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+            <div className="text-center p-4 bg-gray-800/50 rounded-lg">
+              <div className="text-2xl font-bold text-blue-400">{stats.total}</div>
+              <div className="text-sm text-gray-400">Total Referrals</div>
+            </div>
+            <div className="text-center p-4 bg-gray-800/50 rounded-lg">
+              <div className="text-2xl font-bold text-green-400">{stats.verified}</div>
+              <div className="text-sm text-gray-400">Verified</div>
+            </div>
+            <div className="text-center p-4 bg-gray-800/50 rounded-lg">
+              <div className="text-2xl font-bold text-yellow-400">{stats.pending}</div>
+              <div className="text-sm text-gray-400">Pending</div>
+            </div>
+            <div className="text-center p-4 bg-gray-800/50 rounded-lg">
+              <div className="text-2xl font-bold text-purple-400">{stats.totalReferralCodes}</div>
+              <div className="text-sm text-gray-400">Referral Codes</div>
+            </div>
+            <div className="text-center p-4 bg-gray-800/50 rounded-lg">
+              <div className="text-2xl font-bold text-orange-400">{stats.activeReferralCodes}</div>
+              <div className="text-sm text-gray-400">Active Codes</div>
+            </div>
+            <div className="text-center p-4 bg-gray-800/50 rounded-lg">
+              <div className="text-2xl font-bold text-red-400">{formatCurrency(stats.totalBonus)}</div>
+              <div className="text-sm text-gray-400">Total Rewards</div>
+            </div>
+          </div>
+
+          {/* Period-based stats */}
+          <div className="mt-4 grid grid-cols-3 gap-4">
+            <div className="text-center p-3 bg-gray-800/30 rounded-lg">
+              <div className="text-lg font-bold text-green-400">{stats.todayReferrals}</div>
+              <div className="text-xs text-gray-400">Today</div>
+            </div>
+            <div className="text-center p-3 bg-gray-800/30 rounded-lg">
+              <div className="text-lg font-bold text-blue-400">{stats.weekReferrals}</div>
+              <div className="text-xs text-gray-400">This Week</div>
+            </div>
+            <div className="text-center p-3 bg-gray-800/30 rounded-lg">
+              <div className="text-lg font-bold text-purple-400">{stats.monthReferrals}</div>
+              <div className="text-xs text-gray-400">This Month</div>
+            </div>
+          </div>
+
+          {/* Conversion Rate */}
+          <div className="mt-4 p-3 bg-gradient-to-r from-green-500/20 to-blue-500/20 rounded-lg">
+            <div className="text-center">
+              <div className="text-xl font-bold text-white">{stats.conversionRate.toFixed(1)}%</div>
+              <div className="text-sm text-gray-300">Overall Conversion Rate</div>
+            </div>
+          </div>
+        </motion.div>
+
+        {/* Content based on active view */}
+        {activeView === 'basic' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+          >
+            {/* Search and Filter */}
+            <div className="glass p-6 border border-white/10 rounded-xl mb-6">
+              <div className="flex flex-col md:flex-row gap-4">
+                <div className="flex-1">
+                  <div className="relative">
+                    <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 w-4 h-4" />
                     <input
                       type="text"
-                      placeholder="Search referrals..."
+                      placeholder="Search by name, ID, or referral code..."
                       value={searchTerm}
                       onChange={(e) => setSearchTerm(e.target.value)}
-                      className="w-full pl-10 pr-4 py-2 bg-gray-800/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:ring-2 focus:ring-gold focus:border-gold"
+                      className="w-full pl-10 pr-4 py-2 bg-gray-800/50 border border-gray-600 rounded-lg text-white placeholder-gray-400 focus:outline-none focus:border-gold"
                     />
                   </div>
-
-                  {/* Filter */}
+                </div>
+                <div className="flex gap-2">
                   <select
                     value={filterStatus}
                     onChange={(e) => setFilterStatus(e.target.value)}
-                    className="px-4 py-2 bg-gray-800/50 border border-gray-600 rounded-lg text-white focus:outline-none focus:ring-2 focus:ring-gold focus:border-gold"
+                    className="px-4 py-2 bg-gray-800/50 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-gold"
                   >
                     <option value="all">All Status</option>
                     <option value="pending">Pending</option>
@@ -294,256 +477,336 @@ export default function AdminReferrals() {
                     <option value="rejected">Rejected</option>
                   </select>
                 </div>
+              </div>
+            </div>
 
-                {/* Actions */}
-                <div className="flex gap-2">
-                  <button className="px-4 py-2 bg-gradient-to-r from-gold to-yellow-500 text-navy rounded-lg font-semibold hover:scale-105 transition-all duration-300">
-                    <TrendingUp className="w-4 h-4 inline mr-2" />
-                    Analytics
-                  </button>
+            {/* Referrals List */}
+            <div className="glass p-6 border border-white/10 rounded-xl">
+              <h3 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                <Users className="w-5 h-5 text-gold" />
+                Referrals ({filteredReferrals.length})
+              </h3>
+
+              {loading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gold mx-auto"></div>
+                  <p className="text-gray-400 mt-2">Loading referrals...</p>
+                </div>
+              ) : filteredReferrals.length === 0 ? (
+                <div className="text-center py-8">
+                  <Users className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-400">No referrals found</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {filteredReferrals.map((referral) => (
+                    <div key={referral.id} className="p-4 bg-gray-800/50 rounded-lg border border-gray-700/50">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-2">
+                              {getStatusIcon(referral.status)}
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${getStatusColor(referral.status)}`}>
+                                {referral.status}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="text-white font-medium">
+                                {referral.referrer?.first_name || 'Unknown'} → {referral.referred?.first_name || 'Unknown'}
+                              </p>
+                              <p className="text-sm text-gray-400">
+                                Referrer: @{referral.referrer?.username || 'unknown'} | 
+                                Referred: @{referral.referred?.username || 'unknown'}
+                              </p>
+                              {referral.referrer?.referral_code && (
+                                <p className="text-xs text-blue-400">
+                                  Code: {referral.referrer.referral_code}
+                                </p>
+                              )}
+                            </div>
+                          </div>
+                          <div className="mt-2 text-sm text-gray-400">
+                            <span>Bonus: {formatCurrency(referral.referral_bonus || 0)}</span>
+                            <span className="mx-2">•</span>
+                            <span>{formatDate(referral.created_at)}</span>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          {referral.status === 'pending' && (
+                            <>
+                              <button
+                                onClick={() => handleStatusUpdate(referral.id, 'verified')}
+                                className="px-3 py-1 bg-green-600 hover:bg-green-700 text-white rounded text-sm transition-all duration-300"
+                              >
+                                Verify
+                              </button>
+                              <button
+                                onClick={() => handleStatusUpdate(referral.id, 'rejected')}
+                                className="px-3 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-sm transition-all duration-300"
+                              >
+                                Reject
+                              </button>
+                            </>
+                          )}
+                          <button className="p-2 bg-gray-700 hover:bg-gray-600 rounded transition-all duration-300">
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {activeView === 'codes' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+          >
+            <div className="glass p-6 border border-white/10 rounded-xl">
+              <h3 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                <Link className="w-5 h-5 text-gold" />
+                Referral Codes Management
+              </h3>
+
+              {loading ? (
+                <div className="text-center py-8">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gold mx-auto"></div>
+                  <p className="text-gray-400 mt-2">Loading referral codes...</p>
+                </div>
+              ) : referralCodes.length === 0 ? (
+                <div className="text-center py-8">
+                  <Link className="w-12 h-12 text-gray-400 mx-auto mb-4" />
+                  <p className="text-gray-400">No referral codes found</p>
+                </div>
+              ) : (
+                <div className="space-y-4">
+                  {referralCodes.map((code) => (
+                    <div key={code.id} className="p-4 bg-gray-800/50 rounded-lg border border-gray-700/50">
+                      <div className="flex items-center justify-between">
+                        <div className="flex-1">
+                          <div className="flex items-center gap-4">
+                            <div className="flex items-center gap-2">
+                              {code.is_active ? (
+                                <UserCheck className="w-4 h-4 text-green-400" />
+                              ) : (
+                                <UserX className="w-4 h-4 text-red-400" />
+                              )}
+                              <span className={`px-2 py-1 rounded text-xs font-medium ${
+                                code.is_active ? 'bg-green-500/20 text-green-400' : 'bg-red-500/20 text-red-400'
+                              }`}>
+                                {code.is_active ? 'Active' : 'Inactive'}
+                              </span>
+                            </div>
+                            <div>
+                              <p className="text-white font-medium">
+                                {code.user?.first_name || 'Unknown'} (@{code.user?.username || 'unknown'})
+                              </p>
+                              <p className="text-sm text-blue-400 font-mono">
+                                Code: {code.referral_code}
+                              </p>
+                              <p className="text-xs text-gray-400">
+                                Clicks: {code.total_clicks || 0} | Conversions: {code.total_conversions || 0}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="mt-2">
+                            <p className="text-xs text-gray-400">
+                              Link: {generateReferralLink(code.referral_code)}
+                            </p>
+                            <p className="text-xs text-gray-400">
+                              Created: {formatDate(code.created_at)}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex gap-2">
+                          <button
+                            onClick={() => handleReferralCodeToggle(code.id, !code.is_active)}
+                            className={`px-3 py-1 rounded text-sm transition-all duration-300 ${
+                              code.is_active
+                                ? 'bg-red-600 hover:bg-red-700 text-white'
+                                : 'bg-green-600 hover:bg-green-700 text-white'
+                            }`}
+                          >
+                            {code.is_active ? 'Deactivate' : 'Activate'}
+                          </button>
+                          <button className="p-2 bg-gray-700 hover:bg-gray-600 rounded transition-all duration-300">
+                            <Eye className="w-4 h-4" />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </motion.div>
+        )}
+
+        {activeView === 'analytics' && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
+          >
+            <div className="glass p-6 border border-white/10 rounded-xl">
+              <h3 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                <TrendingUp className="w-5 h-5 text-gold" />
+                Performance Analytics
+              </h3>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Group Verification Stats */}
+                <div className="p-4 bg-gray-800/50 rounded-lg">
+                  <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                    <Globe className="w-4 h-4 text-blue-400" />
+                    Group Verification
+                  </h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Total Verifications:</span>
+                      <span className="text-white font-semibold">{stats.totalGroupVerifications}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Pending Verifications:</span>
+                      <span className="text-yellow-400 font-semibold">{stats.pendingGroupVerifications}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Success Rate:</span>
+                      <span className="text-green-400 font-semibold">
+                        {stats.totalGroupVerifications > 0 
+                          ? ((stats.totalGroupVerifications - stats.pendingGroupVerifications) / stats.totalGroupVerifications * 100).toFixed(1)
+                          : 0}%
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Referral Performance */}
+                <div className="p-4 bg-gray-800/50 rounded-lg">
+                  <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                    <Award className="w-4 h-4 text-purple-400" />
+                    Referral Performance
+                  </h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Active Referrers:</span>
+                      <span className="text-white font-semibold">{stats.activeReferralCodes}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Conversion Rate:</span>
+                      <span className="text-green-400 font-semibold">{stats.conversionRate.toFixed(1)}%</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Avg. Reward per Referral:</span>
+                      <span className="text-gold font-semibold">৳2.00</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Period Performance */}
+                <div className="p-4 bg-gray-800/50 rounded-lg">
+                  <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-orange-400" />
+                    Period Performance
+                  </h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Today:</span>
+                      <span className="text-green-400 font-semibold">{stats.todayReferrals}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">This Week:</span>
+                      <span className="text-blue-400 font-semibold">{stats.weekReferrals}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">This Month:</span>
+                      <span className="text-purple-400 font-semibold">{stats.monthReferrals}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* System Health */}
+                <div className="p-4 bg-gray-800/50 rounded-lg">
+                  <h4 className="text-lg font-semibold text-white mb-3 flex items-center gap-2">
+                    <Shield className="w-4 h-4 text-green-400" />
+                    System Health
+                  </h4>
+                  <div className="space-y-2">
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Total Users:</span>
+                      <span className="text-white font-semibold">{stats.total + stats.totalReferralCodes}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Active System:</span>
+                      <span className="text-green-400 font-semibold">✅ Online</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-gray-400">Last Updated:</span>
+                      <span className="text-gray-300 font-semibold">{new Date().toLocaleTimeString()}</span>
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
-
-            {/* Referrals Table */}
-            <div className="glass border border-white/10 rounded-xl overflow-hidden">
-              <div className="overflow-x-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-800/50">
-                    <tr>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Referrer</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Referred User</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Status</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Bonus</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Date</th>
-                      <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-700/50">
-                    {loading ? (
-                      <tr>
-                        <td colSpan={6} className="px-6 py-4 text-center text-gray-400">
-                          Loading referrals...
-                        </td>
-                      </tr>
-                    ) : filteredReferrals.length === 0 ? (
-                      <tr>
-                        <td colSpan={6} className="px-6 py-4 text-center text-gray-400">
-                          No referrals found
-                        </td>
-                      </tr>
-                    ) : (
-                      filteredReferrals.map((referral, index) => (
-                        <motion.tr
-                          key={referral.id}
-                          initial={{ opacity: 0, y: 20 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ duration: 0.3, delay: index * 0.1 }}
-                          className="hover:bg-gray-800/30 transition-colors duration-200"
-                        >
-                          <td className="px-6 py-4">
-                            <div className="flex items-center">
-                              <div className="w-10 h-10 bg-gradient-to-r from-blue-500 to-blue-600 rounded-full flex items-center justify-center mr-3">
-                                <span className="text-white font-semibold text-sm">
-                                  {referral.referrer?.first_name?.charAt(0).toUpperCase() || 'U'}
-                                </span>
-                              </div>
-                              <div>
-                                <div className="text-sm font-medium text-white">{referral.referrer?.first_name || 'Unknown'}</div>
-                                <div className="text-sm text-gray-400">@{referral.referrer?.username || 'No username'}</div>
-                                <div className="text-xs text-gray-500">ID: {referral.referrer_id}</div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center">
-                              <div className="w-10 h-10 bg-gradient-to-r from-green-500 to-green-600 rounded-full flex items-center justify-center mr-3">
-                                <span className="text-white font-semibold text-sm">
-                                  {referral.referred?.first_name?.charAt(0).toUpperCase() || 'U'}
-                                </span>
-                              </div>
-                              <div>
-                                <div className="text-sm font-medium text-white">{referral.referred?.first_name || 'Unknown'}</div>
-                                <div className="text-sm text-gray-400">@{referral.referred?.username || 'No username'}</div>
-                                <div className="text-xs text-gray-500">ID: {referral.referred_id}</div>
-                              </div>
-                            </div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(referral.status)}`}>
-                              {getStatusIcon(referral.status)}
-                              <span className="ml-1 capitalize">{referral.status}</span>
-                            </span>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="text-sm font-medium text-white">{formatCurrency(referral.referral_bonus)}</div>
-                            <div className="text-xs text-gray-400">BDT Bonus</div>
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="text-sm text-white">{formatDate(referral.created_at)}</div>
-                            {referral.verification_date && (
-                              <div className="text-xs text-gray-400">
-                                Verified: {formatDate(referral.verification_date)}
-                              </div>
-                            )}
-                          </td>
-                          <td className="px-6 py-4">
-                            <div className="flex items-center space-x-2">
-                              {referral.status === 'pending' && (
-                                <>
-                                  <button
-                                    onClick={() => handleStatusUpdate(referral.id, 'verified')}
-                                    className="p-2 text-green-400 hover:text-green-300 hover:bg-green-500/10 rounded-lg transition-all duration-200"
-                                    title="Verify Referral"
-                                  >
-                                    <CheckCircle className="w-4 h-4" />
-                                  </button>
-                                  <button
-                                    onClick={() => handleStatusUpdate(referral.id, 'rejected')}
-                                    className="p-2 text-red-400 hover:text-red-300 hover:bg-red-500/10 rounded-lg transition-all duration-200"
-                                    title="Reject Referral"
-                                  >
-                                    <XCircle className="w-4 h-4" />
-                                  </button>
-                                </>
-                              )}
-                              <button
-                                className="p-2 text-blue-400 hover:text-blue-300 hover:bg-blue-500/10 rounded-lg transition-all duration-200"
-                                title="View Details"
-                              >
-                                <Eye className="w-4 h-4" />
-                              </button>
-                            </div>
-                          </td>
-                        </motion.tr>
-                      ))
-                    )}
-                  </tbody>
-                </table>
-              </div>
-            </div>
-          </>
+          </motion.div>
         )}
 
-        {/* Enhanced Analytics View */}
         {activeView === 'enhanced' && (
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.5 }}
+            transition={{ duration: 0.5, delay: 0.4 }}
           >
-            {/* Enhanced Analytics Header */}
-            <div className="glass p-6 border border-white/10 rounded-xl mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-xl font-semibold flex items-center gap-2">
-                  <BarChart3 className="w-6 h-6 text-gold" />
-                  Enhanced Referral Analytics
-                </h3>
-                <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => setShowEnhancedAnalytics(!showEnhancedAnalytics)}
-                    className={`px-4 py-2 rounded-lg font-semibold transition-all duration-300 ${
-                      showEnhancedAnalytics 
-                        ? 'bg-blue-500 hover:bg-blue-600 text-white' 
-                        : 'bg-gold hover:bg-yellow-500 text-navy'
-                    }`}
-                  >
-                    {showEnhancedAnalytics ? 'Hide Dashboard' : 'Show Full Dashboard'}
-                  </button>
-                </div>
-              </div>
-              
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <div className="text-center p-4 bg-gray-800/50 rounded-lg">
-                  <div className="text-2xl font-bold text-blue-400">0</div>
-                  <div className="text-sm text-gray-400">Total Groups</div>
-                  <div className="text-xs text-blue-400">Enhanced tracking</div>
-                </div>
-                <div className="text-center p-4 bg-gray-800/50 rounded-lg">
-                  <div className="text-2xl font-bold text-green-400">0</div>
-                  <div className="text-sm text-gray-400">Active Referrals</div>
-                  <div className="text-xs text-green-400">Real-time data</div>
-                </div>
-                <div className="text-center p-4 bg-gray-800/50 rounded-lg">
-                  <div className="text-2xl font-bold text-purple-400">0</div>
-                  <div className="text-sm text-gray-400">Conversion Rate</div>
-                  <div className="text-xs text-purple-400">AI-powered</div>
-                </div>
-                <div className="text-center p-4 bg-gray-800/50 rounded-lg">
-                  <div className="text-2xl font-bold text-orange-400">0</div>
-                  <div className="text-sm text-gray-400">Fraud Detection</div>
-                  <div className="text-xs text-orange-400">Active monitoring</div>
-                </div>
-              </div>
-            </div>
+            <div className="glass p-6 border border-white/10 rounded-xl">
+              <h3 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+                <Zap className="w-5 h-5 text-gold" />
+                Enhanced Referral System Features
+              </h3>
 
-            {/* Enhanced Dashboard */}
-            {showEnhancedAnalytics && (
-              <div className="glass p-4 border border-white/10 rounded-xl mb-6">
-                <AdminReferralDashboard adminId="admin" />
-              </div>
-            )}
-
-            {/* Quick Actions */}
-            <div className="glass p-6 border border-white/10 rounded-xl mb-6">
-              <h4 className="text-lg font-semibold mb-4 flex items-center gap-2">
-                <Shield className="w-5 h-5 text-gold" />
-                Enhanced Referral Actions
-              </h4>
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-                <button className="p-4 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 transition-colors">
-                  <div className="text-center">
-                    <div className="text-2xl mb-2">📊</div>
-                    <div className="text-sm font-medium">Export Report</div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div className="p-4 bg-gray-800/50 rounded-lg">
+                  <h4 className="text-lg font-semibold text-white mb-3">🔄 Auto-Start Triggers</h4>
+                  <p className="text-gray-300 text-sm mb-2">
+                    Referral links automatically start the bot with referral codes
+                  </p>
+                  <div className="text-xs text-gray-400">
+                    Format: t.me/botname?start=REFERRAL_CODE
                   </div>
-                </button>
-                <button className="p-4 bg-green-500/20 text-green-400 rounded-lg hover:bg-green-500/30 transition-colors">
-                  <div className="text-center">
-                    <div className="text-2xl mb-2">🎯</div>
-                    <div className="text-sm font-medium">Set Goals</div>
-                  </div>
-                </button>
-                <button className="p-4 bg-purple-500/20 text-purple-400 rounded-lg hover:bg-purple-500/30 transition-colors">
-                  <div className="text-center">
-                    <div className="text-2xl mb-2">🔍</div>
-                    <div className="text-sm font-medium">Fraud Detection</div>
-                  </div>
-                </button>
-                <button className="p-4 bg-orange-500/20 text-orange-400 rounded-lg hover:bg-orange-500/30 transition-colors">
-                  <div className="text-center">
-                    <div className="text-2xl mb-2">⚙️</div>
-                    <div className="text-sm font-medium">Settings</div>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            {/* Enhanced Features Info */}
-            <div className="glass p-6 border border-blue-500/30 bg-blue-500/10 rounded-xl">
-              <h4 className="text-blue-400 font-semibold mb-4 flex items-center gap-2">
-                <Info className="w-5 h-5" />
-                Enhanced Referral Features
-              </h4>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-blue-300">
-                <div>
-                  <h5 className="font-medium text-blue-200 mb-3">🎯 Advanced Analytics</h5>
-                  <ul className="space-y-2 text-sm">
-                    <li>• System-wide referral performance tracking</li>
-                    <li>• Group-based referral analysis</li>
-                    <li>• Real-time conversion rate monitoring</li>
-                    <li>• Trend analysis and predictions</li>
-                    <li>• Fraud detection and prevention</li>
-                  </ul>
                 </div>
-                <div>
-                  <h5 className="font-medium text-blue-200 mb-3">📊 Performance Management</h5>
-                  <ul className="space-y-2 text-sm">
-                    <li>• Individual referral code tracking</li>
-                    <li>• Group membership verification</li>
-                    <li>• Suspicious activity detection</li>
-                    <li>• Automated reporting system</li>
-                    <li>• Performance benchmarking</li>
-                  </ul>
+
+                <div className="p-4 bg-gray-800/50 rounded-lg">
+                  <h4 className="text-lg font-semibold text-white mb-3">👥 Group Membership</h4>
+                  <p className="text-gray-300 text-sm mb-2">
+                    Users must join required group to access Mini App
+                  </p>
+                  <div className="text-xs text-gray-400">
+                    Group: Bull Trading Community (BD)
+                  </div>
+                </div>
+
+                <div className="p-4 bg-gray-800/50 rounded-lg">
+                  <h4 className="text-lg font-semibold text-white mb-3">💰 Fixed Rewards</h4>
+                  <p className="text-gray-300 text-sm mb-2">
+                    Consistent ৳2 reward for each successful referral
+                  </p>
+                  <div className="text-xs text-gray-400">
+                    Automatic balance updates
+                  </div>
+                </div>
+
+                <div className="p-4 bg-gray-800/50 rounded-lg">
+                  <h4 className="text-lg font-semibold text-white mb-3">📊 Enhanced Analytics</h4>
+                  <p className="text-gray-300 text-sm mb-2">
+                    Real-time tracking and performance metrics
+                  </p>
+                  <div className="text-xs text-gray-400">
+                    Conversion rates and user behavior
+                  </div>
                 </div>
               </div>
             </div>
