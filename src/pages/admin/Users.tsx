@@ -15,6 +15,10 @@ interface User {
   total_earnings: number;
   last_active: string;
   created_at: string;
+  referral_code?: string;
+  referred_by?: number;
+  total_referrals?: number;
+  is_active?: boolean;
 }
 
 export default function AdminUsers() {
@@ -28,9 +32,18 @@ export default function AdminUsers() {
   const [selectedUser, setSelectedUser] = useState<User | null>(null);
   const [newBalance, setNewBalance] = useState(0);
   const [balanceChangeReason, setBalanceChangeReason] = useState('');
+  const [stats, setStats] = useState({
+    totalUsers: 0,
+    activeUsers: 0,
+    totalBalance: 0,
+    totalReferrals: 0,
+    totalReferralCodes: 0,
+    activeReferralCodes: 0
+  });
 
   useEffect(() => {
     loadUsers();
+    loadEnhancedStats();
   }, []);
 
   const loadUsers = async () => {
@@ -47,6 +60,92 @@ export default function AdminUsers() {
       console.error('Error loading users:', error);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadEnhancedStats = async () => {
+    try {
+      // Load users stats
+      const { data: usersData, error: usersError } = await supabase
+        .from('users')
+        .select('*');
+
+      if (usersError) throw usersError;
+
+      // Load referrals stats
+      const { data: referralsData, error: referralsError } = await supabase
+        .from('referrals')
+        .select('*');
+
+      if (referralsError) throw referralsError;
+
+      // Load referral codes stats
+      const { data: codesData, error: codesError } = await supabase
+        .from('referral_codes')
+        .select('*');
+
+      if (codesError) throw codesError;
+
+      // Calculate stats
+      const totalUsers = usersData?.length || 0;
+      const activeUsers = usersData?.filter(u => u.is_active !== false).length || 0;
+      const totalBalance = usersData?.reduce((sum, u) => sum + (u.balance || 0), 0) || 0;
+      const totalReferrals = referralsData?.length || 0;
+      const totalReferralCodes = codesData?.length || 0;
+      const activeReferralCodes = codesData?.filter(c => c.is_active).length || 0;
+
+      setStats({
+        totalUsers,
+        activeUsers,
+        totalBalance,
+        totalReferrals,
+        totalReferralCodes,
+        activeReferralCodes
+      });
+    } catch (error) {
+      console.error('Error loading enhanced stats:', error);
+    }
+  };
+
+  // Function to update user data when referral is completed
+  const updateUserOnReferralComplete = async (referrerId: number, referredId: number) => {
+    try {
+      // Update referrer's referral count and balance
+      const { data: referrer, error: referrerError } = await supabase
+        .from('users')
+        .select('referrals_count, balance')
+        .eq('telegram_id', referrerId)
+        .single();
+
+      if (referrerError) throw referrerError;
+
+      const newReferralCount = (referrer.referrals_count || 0) + 1;
+      const newBalance = (referrer.balance || 0) + 2; // ৳2 reward
+
+      // Update referrer
+      await supabase
+        .from('users')
+        .update({
+          referrals_count: newReferralCount,
+          balance: newBalance
+        })
+        .eq('telegram_id', referrerId);
+
+      // Update referred user's referred_by field
+      await supabase
+        .from('users')
+        .update({
+          referred_by: referrerId
+        })
+        .eq('telegram_id', referredId);
+
+      // Reload data
+      loadUsers();
+      loadEnhancedStats();
+
+      console.log(`✅ User data updated for referral: ${referrerId} → ${referredId}`);
+    } catch (error) {
+      console.error('Error updating user data on referral complete:', error);
     }
   };
 
@@ -198,9 +297,57 @@ export default function AdminUsers() {
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
           >
-            Manage all Cash Points users and their activities
+            Manage all Cash Points users and their activities with enhanced referral tracking
           </motion.p>
         </div>
+
+        {/* Enhanced Stats Dashboard */}
+        <motion.div 
+          className="glass p-6 border border-white/10 rounded-xl mb-6"
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5, delay: 0.3 }}
+        >
+          <div className="flex items-center justify-between mb-4">
+            <h3 className="text-xl font-semibold text-white flex items-center gap-2">
+              <Users className="w-5 h-5 text-gold" />
+              Enhanced User Statistics
+            </h3>
+            <button
+              onClick={() => { loadUsers(); loadEnhancedStats(); }}
+              className="p-2 bg-gray-700 hover:bg-gray-600 rounded-lg transition-all duration-300"
+            >
+              <span className="text-sm">🔄 Refresh</span>
+            </button>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+            <div className="text-center p-4 bg-gray-800/50 rounded-lg">
+              <div className="text-2xl font-bold text-blue-400">{stats.totalUsers}</div>
+              <div className="text-sm text-gray-400">Total Users</div>
+            </div>
+            <div className="text-center p-4 bg-gray-800/50 rounded-lg">
+              <div className="text-2xl font-bold text-green-400">{stats.activeUsers}</div>
+              <div className="text-sm text-gray-400">Active Users</div>
+            </div>
+            <div className="text-center p-4 bg-gray-800/50 rounded-lg">
+              <div className="text-2xl font-bold text-gold">{formatCurrency(stats.totalBalance)}</div>
+              <div className="text-sm text-gray-400">Total Balance</div>
+            </div>
+            <div className="text-center p-4 bg-gray-800/50 rounded-lg">
+              <div className="text-2xl font-bold text-purple-400">{stats.totalReferrals}</div>
+              <div className="text-sm text-gray-400">Total Referrals</div>
+            </div>
+            <div className="text-center p-4 bg-gray-800/50 rounded-lg">
+              <div className="text-2xl font-bold text-orange-400">{stats.totalReferralCodes}</div>
+              <div className="text-sm text-gray-400">Referral Codes</div>
+            </div>
+            <div className="text-center p-4 bg-gray-800/50 rounded-lg">
+              <div className="text-2xl font-bold text-red-400">{stats.activeReferralCodes}</div>
+              <div className="text-sm text-gray-400">Active Codes</div>
+            </div>
+          </div>
+        </motion.div>
 
         {/* Stats Cards */}
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -323,6 +470,7 @@ export default function AdminUsers() {
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Balance</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Level</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Referrals</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Referral Code</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Last Active</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Actions</th>
                 </tr>
@@ -330,13 +478,13 @@ export default function AdminUsers() {
               <tbody className="divide-y divide-gray-700/50">
                 {loading ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-4 text-center text-gray-400">
+                    <td colSpan={7} className="px-6 py-4 text-center text-gray-400">
                       Loading users...
                     </td>
                   </tr>
                 ) : filteredUsers.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-6 py-4 text-center text-gray-400">
+                    <td colSpan={7} className="px-6 py-4 text-center text-gray-400">
                       No users found
                     </td>
                   </tr>
@@ -375,6 +523,22 @@ export default function AdminUsers() {
                       <td className="px-6 py-4">
                         <div className="text-sm font-medium text-white">{user.referrals_count || 0}</div>
                         <div className="text-xs text-gray-400">referrals</div>
+                        {user.referral_code && (
+                          <div className="text-xs text-blue-400 font-mono">Code: {user.referral_code}</div>
+                        )}
+                        {user.referred_by && (
+                          <div className="text-xs text-green-400">Referred by: {user.referred_by}</div>
+                        )}
+                      </td>
+                      <td className="px-6 py-4">
+                        {user.referral_code ? (
+                          <div className="text-sm font-medium text-blue-400 font-mono">{user.referral_code}</div>
+                        ) : (
+                          <div className="text-sm text-gray-500">No code</div>
+                        )}
+                        {user.is_active !== false && (
+                          <div className="text-xs text-green-400">Active</div>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm text-white">{formatDate(user.last_active)}</div>
