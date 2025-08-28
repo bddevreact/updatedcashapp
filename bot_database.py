@@ -15,9 +15,9 @@ TOKEN = "8214925584:AAGzxmpSxFTGmvU-L778DNxUJ35QUR5dDZU"
 BOT_USERNAME = "@CashPoinntbot"
 
 # Group configuration
-REQUIRED_GROUP_ID = -1001234567890  # আপনার group ID এখানে দিন
-REQUIRED_GROUP_LINK = "https://t.me/+GOIMwAc_R9RhZGVk"  # আপনার group link এখানে দিন
-REQUIRED_GROUP_NAME = "Cash Points Community"  # আপনার group name
+REQUIRED_GROUP_ID = -1002551110221  # Bull Trading Community (BD)
+REQUIRED_GROUP_LINK = "https://t.me/+GOIMwAc_R9RhZGVk"  # Bull Trading Community (BD)
+REQUIRED_GROUP_NAME = "Bull Trading Community (BD)"  # Bull Trading Community (BD)
 
 # Supabase configuration
 SUPABASE_URL = os.getenv('VITE_SUPABASE_URL')
@@ -34,8 +34,11 @@ except Exception as e:
 # Check if user is member of required group
 async def check_group_membership(user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
     try:
+        # Real group membership check
         chat_member = await context.bot.get_chat_member(REQUIRED_GROUP_ID, user_id)
-        return chat_member.status in ['member', 'administrator', 'creator']
+        is_member = chat_member.status in ['member', 'administrator', 'creator']
+        print(f"🔍 Checking membership for user {user_id}: {is_member} ({chat_member.status})")
+        return is_member
     except Exception as e:
         print(f"❌ Error checking group membership: {e}")
         return False
@@ -594,33 +597,33 @@ async def handle_member_left(update: Update, context: ContextTypes.DEFAULT_TYPE)
 
 # Help command
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-            help_text = (
-            "🤖 <b>Cash Points Bot Commands:</b>\n\n"
-            "📋 <b>Available Commands:</b>\n"
-            "/start - Start the bot and get main menu\n"
-            "/help - Show this help message\n"
-            "/stats - Show your statistics\n"
-            "/debug - Debug referral status\n\n"
-            "🔍 <b>Bot Features:</b>\n"
-            "✅ Automatic join/leave tracking\n"
-            "✅ Database integration\n"
-            "✅ Referral link monitoring\n"
-            "✅ Welcome messages for new members\n"
-            "✅ Mini App integration\n"
-            "✅ Reward tracking\n"
-            "✅ Group membership verification\n\n"
-            "💰 <b>Referral System:</b>\n"
-            "🔗 Share your referral link: t.me/CashPoinntbot?start=ref_{your_id}\n"
-            "✅ When someone joins via your link: You get ৳2\n"
-            "❌ New user gets: ৳0 (nothing)\n"
-            "🔒 User must join group to activate referral\n\n"
-            "📊 <b>Tracking Status:</b>\n"
-            "👥 Members joined: Tracked in database\n"
-            "👋 Members left: Tracked in database\n"
-            "🔗 Referral links: Monitored and stored\n"
-            "💰 Rewards: Automatically calculated\n\n"
-            "💡 <b>Tip:</b> Add the bot to your group as admin for full functionality!"
-        )
+    help_text = (
+        "🤖 <b>Cash Points Bot Commands:</b>\n\n"
+        "📋 <b>Available Commands:</b>\n"
+        "/start - Start the bot and get main menu\n"
+        "/help - Show this help message\n"
+        "/stats - Show your statistics\n"
+        "/debug - Debug referral status\n\n"
+        "🔍 <b>Bot Features:</b>\n"
+        "✅ Automatic join/leave tracking\n"
+        "✅ Database integration\n"
+        "✅ Referral link monitoring\n"
+        "✅ Welcome messages for new members\n"
+        "✅ Mini App integration\n"
+        "✅ Reward tracking\n"
+        "✅ Group membership verification\n\n"
+        "💰 <b>Referral System:</b>\n"
+        "🔗 Share your referral link: t.me/CashPoinntbot?start=ref_{your_id}\n"
+        "✅ When someone joins via your link: You get ৳2\n"
+        "❌ New user gets: ৳0 (nothing)\n"
+        "🔒 User must join group to activate referral\n\n"
+        "📊 <b>Tracking Status:</b>\n"
+        "👥 Members joined: Tracked in database\n"
+        "👋 Members left: Tracked in database\n"
+        "🔗 Referral links: Monitored and stored\n"
+        "💰 Rewards: Automatically calculated\n\n"
+        "💡 <b>Tip:</b> Add the bot to your group as admin for full functionality!"
+    )
     
     await update.message.reply_text(help_text, parse_mode='HTML')
 
