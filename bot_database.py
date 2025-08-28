@@ -115,7 +115,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # User is member - show Mini App
         print(f"✅ User {user_name} is group member - showing Mini App")
         
-        # Process pending referral if exists
+        # Process pending referral if exists - IMPROVED LOGIC
         if supabase:
             try:
                 pending_referral = supabase.table('referrals').select('*').eq('referred_id', user_id).eq('status', 'pending_group_join').execute()
@@ -124,30 +124,42 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     referral = pending_referral.data[0]
                     referrer_id = referral['referrer_id']
                     
-                    # Update referral status to joined
-                    supabase.table('referrals').update({
-                        'status': 'joined',
-                        'updated_at': datetime.now().isoformat(),
-                        'is_active': True
-                    }).eq('id', referral['id']).execute()
+                    print(f"🔍 Found pending referral in start command: {referrer_id} -> {user_id}")
                     
-                    # Give reward to referrer (+2 taka)
-                    current_balance = supabase.table('users').select('balance').eq('telegram_id', referrer_id).execute().data[0]['balance']
-                    supabase.table('users').update({
-                        'balance': current_balance + 2
-                    }).eq('telegram_id', referrer_id).execute()
+                    # Check if referrer exists
+                    referrer_user = supabase.table('users').select('*').eq('telegram_id', referrer_id).execute()
                     
-                    # Send notification to referrer
-                    supabase.table('notifications').insert({
-                        'user_id': referrer_id,
-                        'type': 'referral_reward',
-                        'title': 'Referral Reward Earned! 🎉',
-                        'message': f'User {user_name} joined the group! You earned ৳2.',
-                        'is_read': False,
-                        'created_at': datetime.now().isoformat()
-                    }).execute()
-                    
-                    print(f"💰 Referral reward processed: {referrer_id} got ৳2 for {user_name}")
+                    if referrer_user.data:
+                        # Update referral status to joined
+                        supabase.table('referrals').update({
+                            'status': 'joined',
+                            'updated_at': datetime.now().isoformat(),
+                            'is_active': True,
+                            'rejoin_count': 0
+                        }).eq('id', referral['id']).execute()
+                        
+                        # Get current balance safely
+                        current_balance = referrer_user.data[0].get('balance', 0)
+                        new_balance = current_balance + 2
+                        
+                        # Update referrer balance
+                        supabase.table('users').update({
+                            'balance': new_balance
+                        }).eq('telegram_id', referrer_id).execute()
+                        
+                        # Send notification to referrer
+                        supabase.table('notifications').insert({
+                            'user_id': referrer_id,
+                            'type': 'referral_reward',
+                            'title': 'Referral Reward Earned! 🎉',
+                            'message': f'User {user_name} joined the group! You earned ৳2. New balance: ৳{new_balance}',
+                            'is_read': False,
+                            'created_at': datetime.now().isoformat()
+                        }).execute()
+                        
+                        print(f"💰 Referral reward processed in start: {referrer_id} got ৳2 (Balance: {current_balance} -> {new_balance})")
+                    else:
+                        print(f"❌ Referrer {referrer_id} not found in database")
                     
             except Exception as e:
                 print(f"❌ Error processing referral reward: {e}")
@@ -258,7 +270,7 @@ async def check_membership_callback(update: Update, context: ContextTypes.DEFAUL
         # User joined - process referral and show Mini App
         print(f"✅ User {user_name} joined group - processing referral")
         
-        # Process pending referral if exists
+        # Process pending referral if exists - IMPROVED LOGIC
         if supabase:
             try:
                 pending_referral = supabase.table('referrals').select('*').eq('referred_id', user_id).eq('status', 'pending_group_join').execute()
@@ -267,41 +279,60 @@ async def check_membership_callback(update: Update, context: ContextTypes.DEFAUL
                     referral = pending_referral.data[0]
                     referrer_id = referral['referrer_id']
                     
-                    # Update referral status to joined
-                    supabase.table('referrals').update({
-                        'status': 'joined',
-                        'updated_at': datetime.now().isoformat(),
-                        'is_active': True
-                    }).eq('id', referral['id']).execute()
+                    print(f"🔍 Found pending referral via callback: {referrer_id} -> {user_id}")
                     
-                    # Give reward to referrer (+2 taka)
-                    current_balance = supabase.table('users').select('balance').eq('telegram_id', referrer_id).execute().data[0]['balance']
-                    supabase.table('users').update({
-                        'balance': current_balance + 2
-                    }).eq('telegram_id', referrer_id).execute()
+                    # Check if referrer exists
+                    referrer_user = supabase.table('users').select('*').eq('telegram_id', referrer_id).execute()
                     
-                    # Send notification to referrer
-                    supabase.table('notifications').insert({
-                        'user_id': referrer_id,
-                        'type': 'referral_reward',
-                        'title': 'Referral Reward Earned! 🎉',
-                        'message': f'User {user_name} joined the group! You earned ৳2.',
-                        'is_read': False,
-                        'created_at': datetime.now().isoformat()
-                    }).execute()
-                    
-                    print(f"💰 Referral reward processed via callback: {referrer_id} got ৳2")
-                    
-                    success_message = (
-                        f"🎉 <b>Welcome {user_name}!</b>\n\n"
-                        "✅ আপনি এখন আমাদের group member! \n"
-                        "🔓 সব features unlock হয়েছে।\n\n"
-                        "💰 <b>Referral Processed:</b>\n"
-                        "✅ আপনার referrer ৳2 পেয়েছেন\n"
-                        "❌ আপনি কিছুই পাননি (নিয়ম অনুযায়ী)\n\n"
-                        "👉 এখন Mini App খুলুন এবং রিওয়ার্ড অর্জন শুরু করুন!"
-                    )
+                    if referrer_user.data:
+                        # Update referral status to joined
+                        supabase.table('referrals').update({
+                            'status': 'joined',
+                            'updated_at': datetime.now().isoformat(),
+                            'is_active': True,
+                            'rejoin_count': 0
+                        }).eq('id', referral['id']).execute()
+                        
+                        # Get current balance safely
+                        current_balance = referrer_user.data[0].get('balance', 0)
+                        new_balance = current_balance + 2
+                        
+                        # Update referrer balance
+                        supabase.table('users').update({
+                            'balance': new_balance
+                        }).eq('telegram_id', referrer_id).execute()
+                        
+                        # Send notification to referrer
+                        supabase.table('notifications').insert({
+                            'user_id': referrer_id,
+                            'type': 'referral_reward',
+                            'title': 'Referral Reward Earned! 🎉',
+                            'message': f'User {user_name} joined the group! You earned ৳2. New balance: ৳{new_balance}',
+                            'is_read': False,
+                            'created_at': datetime.now().isoformat()
+                        }).execute()
+                        
+                        print(f"💰 Referral reward processed via callback: {referrer_id} got ৳2 (Balance: {current_balance} -> {new_balance})")
+                        
+                        success_message = (
+                            f"🎉 <b>Welcome {user_name}!</b>\n\n"
+                            "✅ আপনি এখন আমাদের group member! \n"
+                            "🔓 সব features unlock হয়েছে।\n\n"
+                            "💰 <b>Referral Processed:</b>\n"
+                            "✅ আপনার referrer ৳2 পেয়েছেন\n"
+                            "❌ আপনি কিছুই পাননি (নিয়ম অনুযায়ী)\n\n"
+                            "👉 এখন Mini App খুলুন এবং রিওয়ার্ড অর্জন শুরু করুন!"
+                        )
+                    else:
+                        print(f"❌ Referrer {referrer_id} not found in database")
+                        success_message = (
+                            f"🎉 <b>Welcome {user_name}!</b>\n\n"
+                            "✅ আপনি এখন আমাদের group member! \n"
+                            "🔓 সব features unlock হয়েছে।\n\n"
+                            "👉 এখন Mini App খুলুন এবং রিওয়ার্ড অর্জন শুরু করুন!"
+                        )
                 else:
+                    print(f"📝 No pending referral found for user {user_id}")
                     success_message = (
                         f"🎉 <b>Welcome {user_name}!</b>\n\n"
                         "✅ আপনি এখন আমাদের group member! \n"
@@ -407,44 +438,7 @@ async def handle_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"👤 New member joined: {username} (ID: {user_id}) in chat: {chat.title}")
             print(f"📅 Join time: {join_date}")
             
-            # Check if user has pending referral
-            if supabase:
-                try:
-                    pending_referral = supabase.table('referrals').select('*').eq('referred_id', user_id).eq('status', 'pending_group_join').execute()
-                    
-                    if pending_referral.data:
-                        referral = pending_referral.data[0]
-                        referrer_id = referral['referrer_id']
-                        
-                        # Update referral status to joined
-                        supabase.table('referrals').update({
-                            'status': 'joined',
-                            'updated_at': join_date.isoformat(),
-                            'is_active': True
-                        }).eq('id', referral['id']).execute()
-                        
-                        # Give reward to referrer (+2 taka)
-                        current_balance = supabase.table('users').select('balance').eq('telegram_id', referrer_id).execute().data[0]['balance']
-                        supabase.table('users').update({
-                            'balance': current_balance + 2
-                        }).eq('telegram_id', referrer_id).execute()
-                        
-                        # Send notification to referrer
-                        supabase.table('notifications').insert({
-                            'user_id': referrer_id,
-                            'type': 'referral_reward',
-                            'title': 'Referral Reward Earned! 🎉',
-                            'message': f'User {username} joined the group! You earned ৳2.',
-                            'is_read': False,
-                            'created_at': join_date.isoformat()
-                        }).execute()
-                        
-                        print(f"💰 Referral reward processed via join event: {referrer_id} got ৳2")
-                        
-                except Exception as e:
-                    print(f"❌ Error processing referral reward: {e}")
-            
-            # Create/update user record
+            # Create/update user record first
             existing_user = supabase.table('users').select('*').eq('telegram_id', user_id).execute()
             
             if existing_user.data:
@@ -470,13 +464,86 @@ async def handle_new_member(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 supabase.table('users').insert(new_user_data).execute()
                 print(f"🆕 New user {username} created in database")
             
-            # Send welcome message
-            welcome_message = (
-                f"🎉 <b>স্বাগতম {first_name}!</b>\n\n"
-                f"আপনি আমাদের Cash Points কমিউনিটিতে যোগ দিয়েছেন।\n"
-                f"💰 রিওয়ার্ড অর্জন শুরু করুন এখনই!\n\n"
-                f"👉 <a href='https://super-donut-5e4873.netlify.app/'>Mini App খুলুন</a>"
-            )
+            # Check if user has pending referral - IMPROVED LOGIC
+            if supabase:
+                try:
+                    # Check for pending referral
+                    pending_referral = supabase.table('referrals').select('*').eq('referred_id', user_id).eq('status', 'pending_group_join').execute()
+                    
+                    if pending_referral.data:
+                        referral = pending_referral.data[0]
+                        referrer_id = referral['referrer_id']
+                        
+                        print(f"🔍 Found pending referral: {referrer_id} -> {user_id}")
+                        
+                        # Check if referrer exists
+                        referrer_user = supabase.table('users').select('*').eq('telegram_id', referrer_id).execute()
+                        
+                        if referrer_user.data:
+                            # Update referral status to joined
+                            supabase.table('referrals').update({
+                                'status': 'joined',
+                                'updated_at': join_date.isoformat(),
+                                'is_active': True,
+                                'rejoin_count': 0
+                            }).eq('id', referral['id']).execute()
+                            
+                            # Get current balance safely
+                            current_balance = referrer_user.data[0].get('balance', 0)
+                            new_balance = current_balance + 2
+                            
+                            # Update referrer balance
+                            supabase.table('users').update({
+                                'balance': new_balance
+                            }).eq('telegram_id', referrer_id).execute()
+                            
+                            # Send notification to referrer
+                            supabase.table('notifications').insert({
+                                'user_id': referrer_id,
+                                'type': 'referral_reward',
+                                'title': 'Referral Reward Earned! 🎉',
+                                'message': f'User {username} joined the group! You earned ৳2. New balance: ৳{new_balance}',
+                                'is_read': False,
+                                'created_at': join_date.isoformat()
+                            }).execute()
+                            
+                            print(f"💰 Referral reward processed: {referrer_id} got ৳2 (Balance: {current_balance} -> {new_balance})")
+                            
+                            # Send success message to new user
+                            welcome_message = (
+                                f"🎉 <b>স্বাগতম {first_name}!</b>\n\n"
+                                f"আপনি আমাদের Cash Points কমিউনিটিতে যোগ দিয়েছেন।\n"
+                                f"💰 রিওয়ার্ড অর্জন শুরু করুন এখনই!\n\n"
+                                f"✅ <b>Referral Processed:</b>\n"
+                                f"🔗 আপনার referrer ৳2 পেয়েছেন\n"
+                                f"❌ আপনি কিছুই পাননি (নিয়ম অনুযায়ী)\n\n"
+                                f"👉 <a href='https://super-donut-5e4873.netlify.app/'>Mini App খুলুন</a>"
+                            )
+                        else:
+                            print(f"❌ Referrer {referrer_id} not found in database")
+                            welcome_message = (
+                                f"🎉 <b>স্বাগতম {first_name}!</b>\n\n"
+                                f"আপনি আমাদের Cash Points কমিউনিটিতে যোগ দিয়েছেন।\n"
+                                f"💰 রিওয়ার্ড অর্জন শুরু করুন এখনই!\n\n"
+                                f"👉 <a href='https://super-donut-5e4873.netlify.app/'>Mini App খুলুন</a>"
+                            )
+                    else:
+                        print(f"📝 No pending referral found for user {user_id}")
+                        welcome_message = (
+                            f"🎉 <b>স্বাগতম {first_name}!</b>\n\n"
+                            f"আপনি আমাদের Cash Points কমিউনিটিতে যোগ দিয়েছেন।\n"
+                            f"💰 রিওয়ার্ড অর্জন শুরু করুন এখনই!\n\n"
+                            f"👉 <a href='https://super-donut-5e4873.netlify.app/'>Mini App খুলুন</a>"
+                        )
+                        
+                except Exception as e:
+                    print(f"❌ Error processing referral reward: {e}")
+                    welcome_message = (
+                        f"🎉 <b>স্বাগতম {first_name}!</b>\n\n"
+                        f"আপনি আমাদের Cash Points কমিউনিটিতে যোগ দিয়েছেন।\n"
+                        f"💰 রিওয়ার্ড অর্জন শুরু করুন এখনই!\n\n"
+                        f"👉 <a href='https://super-donut-5e4873.netlify.app/'>Mini App খুলুন</a>"
+                    )
             
             await update.message.reply_text(
                 welcome_message,
@@ -531,7 +598,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🤖 <b>Cash Points Bot Commands:</b>\n\n"
             "📋 <b>Available Commands:</b>\n"
             "/start - Start the bot and get main menu\n"
-            "/help - Show this help message\n\n"
+            "/help - Show this help message\n"
+            "/stats - Show your statistics\n"
+            "/debug - Debug referral status\n\n"
             "🔍 <b>Bot Features:</b>\n"
             "✅ Automatic join/leave tracking\n"
             "✅ Database integration\n"
@@ -607,8 +676,23 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if user_data.data:
             user = user_data.data[0]
+            
+            # Get referral stats
             referrals = supabase.table('referrals').select('*').eq('referrer_id', user_id).execute()
-            total_earnings = sum([ref.get('bonus_amount', 0) for ref in referrals.data])
+            total_referrals = len(referrals.data) if referrals.data else 0
+            
+            # Count active referrals (joined status)
+            active_referrals = len([r for r in referrals.data if r.get('status') == 'joined']) if referrals.data else 0
+            
+            # Count pending referrals
+            pending_referrals = len([r for r in referrals.data if r.get('status') == 'pending_group_join']) if referrals.data else 0
+            
+            # Calculate total earnings (2 taka per active referral)
+            total_earnings = active_referrals * 2
+            
+            # Check if user has pending referral (as referred)
+            pending_as_referred = supabase.table('referrals').select('*').eq('referred_id', user_id).eq('status', 'pending_group_join').execute()
+            has_pending = len(pending_as_referred.data) > 0 if pending_as_referred.data else False
             
             stats_text = (
                 f"📊 <b>Your Stats:</b>\n\n"
@@ -618,9 +702,18 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"Balance: ৳{user.get('balance', 0)}\n"
                 f"Level: {user.get('level', 1)}\n\n"
                 f"📈 <b>Referral Stats:</b>\n"
-                f"Total Referrals: {len(referrals.data)}\n"
-                f"Total Earnings: ৳{total_earnings}\n"
+                f"Total Referrals: {total_referrals}\n"
+                f"✅ Active Referrals: {active_referrals}\n"
+                f"⏳ Pending Referrals: {pending_referrals}\n"
+                f"💰 Total Earnings: ৳{total_earnings}\n"
                 f"Active Status: {'✅' if user.get('is_active') else '❌'}\n\n"
+            )
+            
+            if has_pending:
+                stats_text += f"⚠️ <b>You have a pending referral!</b>\n"
+                stats_text += f"Join the group to complete your referral.\n\n"
+            
+            stats_text += (
                 f"🔗 <b>Your Referral Link:</b>\n"
                 f"<code>t.me/CashPoinntbot?start=ref_{user_id}</code>\n\n"
                 f"📅 <b>Member Since:</b> {user.get('created_at', 'N/A')[:10]}"
@@ -634,6 +727,55 @@ async def stats_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         error_text = f"❌ Error getting stats: {e}"
         await update.message.reply_text(error_text)
 
+# Debug command to check referral status
+async def debug_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not supabase:
+        await update.message.reply_text("❌ Database not connected")
+        return
+        
+    user_id = update.message.from_user.id
+    user_name = update.message.from_user.first_name
+    
+    try:
+        # Check user status
+        user = supabase.table('users').select('*').eq('telegram_id', user_id).execute()
+        
+        debug_message = f"🔍 <b>Debug Info for {user_name}</b>\n\n"
+        
+        if user.data:
+            user_data = user.data[0]
+            debug_message += f"✅ <b>User Found:</b>\n"
+            debug_message += f"ID: {user_data.get('telegram_id')}\n"
+            debug_message += f"Balance: ৳{user_data.get('balance', 0)}\n"
+            debug_message += f"Active: {'✅' if user_data.get('is_active') else '❌'}\n\n"
+        else:
+            debug_message += f"❌ <b>User Not Found</b>\n\n"
+        
+        # Check referrals where user is referrer
+        referrals_as_referrer = supabase.table('referrals').select('*').eq('referrer_id', user_id).execute()
+        debug_message += f"👥 <b>Referrals as Referrer:</b> {len(referrals_as_referrer.data) if referrals_as_referrer.data else 0}\n"
+        
+        if referrals_as_referrer.data:
+            for ref in referrals_as_referrer.data:
+                debug_message += f"  • {ref.get('referred_id')} - {ref.get('status')} - {'✅' if ref.get('is_active') else '❌'}\n"
+        
+        # Check referrals where user is referred
+        referrals_as_referred = supabase.table('referrals').select('*').eq('referred_id', user_id).execute()
+        debug_message += f"\n👤 <b>Referrals as Referred:</b> {len(referrals_as_referred.data) if referrals_as_referred.data else 0}\n"
+        
+        if referrals_as_referred.data:
+            for ref in referrals_as_referred.data:
+                debug_message += f"  • {ref.get('referrer_id')} - {ref.get('status')} - {'✅' if ref.get('is_active') else '❌'}\n"
+        
+        # Check notifications
+        notifications = supabase.table('notifications').select('*').eq('user_id', user_id).execute()
+        debug_message += f"\n🔔 <b>Notifications:</b> {len(notifications.data) if notifications.data else 0}\n"
+        
+    except Exception as e:
+        debug_message = f"❌ Error in debug: {e}"
+    
+    await update.message.reply_text(debug_message, parse_mode='HTML')
+
 def main():
     app = Application.builder().token(TOKEN).build()
 
@@ -642,6 +784,7 @@ def main():
     app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("status", status_command))
     app.add_handler(CommandHandler("stats", stats_command))
+    app.add_handler(CommandHandler("debug", debug_command))
     
     # Callback query handler
     app.add_handler(MessageHandler(filters.Regex("^check_membership$"), check_membership_callback))
@@ -659,7 +802,7 @@ def main():
     print("💰 Referral reward system: Referrer gets ৳2, User gets ৳0")
     print(f"📱 Required group: {REQUIRED_GROUP_NAME}")
     print(f"🔗 Group link: {REQUIRED_GROUP_LINK}")
-    print("📋 Commands: /start, /help, /status, /stats")
+    print("📋 Commands: /start, /help, /status, /stats, /debug")
     print("---")
     
     if supabase:
