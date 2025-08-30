@@ -32,6 +32,8 @@ firebase-debug.log
 .env
 .env.local
 .env.production
+.env.development
+.env.test
 
 # Python
 __pycache__/
@@ -44,6 +46,10 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+*.pyc
 
 # Backup files
 supabase_backup_*.json
+
+# Netlify
+.netlify/

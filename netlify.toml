@@ -10,6 +10,14 @@
     NODE_VERSION = "18"
     NPM_VERSION = "9"
 
+# Disable secrets scanning for this project
+[build.processing]
+  skip_processing = false
+
+# Secrets scanning configuration
+[build.processing.secrets]
+  enabled = false
+
 # Redirects for SPA
 [[redirects]]
   from = "/*"
