@@ -14,7 +14,8 @@ import {
   onSnapshot, 
   addDoc, 
   deleteDoc,
-  serverTimestamp 
+  serverTimestamp,
+  getDocs
 } from 'firebase/firestore';
 import type { FirebaseUser, UserActivity, Notification, UserStats } from '../types/firebase';
 
@@ -146,15 +147,18 @@ export const useFirebaseUserStore = create<UserState>()(
         if (!telegramId) return;
 
         try {
-          const userRef = doc(db, 'users', telegramId);
-          const userSnap = await getDoc(userRef);
+          // Query by telegram_id instead of using document ID
+          const usersRef = collection(db, 'users');
+          const q = query(usersRef, where('telegram_id', '==', telegramId), limit(1));
+          const querySnapshot = await getDocs(q);
           
-          if (userSnap.exists()) {
-            const userData = userSnap.data();
+          if (!querySnapshot.empty) {
+            const userDoc = querySnapshot.docs[0];
+            const userData = userDoc.data();
             const currentBalance = userData.balance || 0;
             const newBalance = currentBalance + amount; // ✅ Increment balance
             
-            await updateDoc(userRef, { 
+            await updateDoc(userDoc.ref, { 
               balance: newBalance,
               total_earnings: (userData.total_earnings || 0) + amount, // ✅ Also update total earnings
               updated_at: serverTimestamp()
@@ -172,12 +176,19 @@ export const useFirebaseUserStore = create<UserState>()(
         if (!telegramId) return;
 
         try {
-          const userRef = doc(db, 'users', telegramId);
-          await updateDoc(userRef, { 
-            energy: amount,
-            updated_at: serverTimestamp()
-          });
-          set({ energy: amount });
+          // Query by telegram_id instead of using document ID
+          const usersRef = collection(db, 'users');
+          const q = query(usersRef, where('telegram_id', '==', telegramId), limit(1));
+          const querySnapshot = await getDocs(q);
+          
+          if (!querySnapshot.empty) {
+            const userDoc = querySnapshot.docs[0];
+            await updateDoc(userDoc.ref, { 
+              energy: amount,
+              updated_at: serverTimestamp()
+            });
+            set({ energy: amount });
+          }
         } catch (error) {
           console.error('Error updating energy:', error);
           throw error;
@@ -189,12 +200,19 @@ export const useFirebaseUserStore = create<UserState>()(
         if (!telegramId) return;
 
         try {
-          const userRef = doc(db, 'users', telegramId);
-          await updateDoc(userRef, { 
-            experience_points: xp,
-            updated_at: serverTimestamp()
-          });
-          set({ experiencePoints: xp });
+          // Query by telegram_id instead of using document ID
+          const usersRef = collection(db, 'users');
+          const q = query(usersRef, where('telegram_id', '==', telegramId), limit(1));
+          const querySnapshot = await getDocs(q);
+          
+          if (!querySnapshot.empty) {
+            const userDoc = querySnapshot.docs[0];
+            await updateDoc(userDoc.ref, { 
+              experience_points: xp,
+              updated_at: serverTimestamp()
+            });
+            set({ experiencePoints: xp });
+          }
         } catch (error) {
           console.error('Error updating experience:', error);
           throw error;
@@ -206,12 +224,19 @@ export const useFirebaseUserStore = create<UserState>()(
         if (!telegramId) return;
 
         try {
-          const userRef = doc(db, 'users', telegramId);
-          await updateDoc(userRef, { 
-            level,
-            updated_at: serverTimestamp()
-          });
-          set({ level });
+          // Query by telegram_id instead of using document ID
+          const usersRef = collection(db, 'users');
+          const q = query(usersRef, where('telegram_id', '==', telegramId), limit(1));
+          const querySnapshot = await getDocs(q);
+          
+          if (!querySnapshot.empty) {
+            const userDoc = querySnapshot.docs[0];
+            await updateDoc(userDoc.ref, { 
+              level,
+              updated_at: serverTimestamp()
+            });
+            set({ level });
+          }
         } catch (error) {
           console.error('Error updating level:', error);
           throw error;
@@ -223,12 +248,19 @@ export const useFirebaseUserStore = create<UserState>()(
         if (!telegramId) return;
 
         try {
-          const userRef = doc(db, 'users', telegramId);
-          await updateDoc(userRef, { 
-            mining_power: power,
-            updated_at: serverTimestamp()
-          });
-          set({ miningPower: power });
+          // Query by telegram_id instead of using document ID
+          const usersRef = collection(db, 'users');
+          const q = query(usersRef, where('telegram_id', '==', telegramId), limit(1));
+          const querySnapshot = await getDocs(q);
+          
+          if (!querySnapshot.empty) {
+            const userDoc = querySnapshot.docs[0];
+            await updateDoc(userDoc.ref, { 
+              mining_power: power,
+              updated_at: serverTimestamp()
+            });
+            set({ miningPower: power });
+          }
         } catch (error) {
           console.error('Error updating mining power:', error);
           throw error;
@@ -240,13 +272,20 @@ export const useFirebaseUserStore = create<UserState>()(
         if (!telegramId) return;
 
         try {
-          const userRef = doc(db, 'users', telegramId);
-          await updateDoc(userRef, {
-            claim_streak: streak,
-            last_claim: lastClaim,
-            updated_at: serverTimestamp()
-          });
-          set({ claimStreak: streak, lastClaim });
+          // Query by telegram_id instead of using document ID
+          const usersRef = collection(db, 'users');
+          const q = query(usersRef, where('telegram_id', '==', telegramId), limit(1));
+          const querySnapshot = await getDocs(q);
+          
+          if (!querySnapshot.empty) {
+            const userDoc = querySnapshot.docs[0];
+            await updateDoc(userDoc.ref, {
+              claim_streak: streak,
+              last_claim: lastClaim,
+              updated_at: serverTimestamp()
+            });
+            set({ claimStreak: streak, lastClaim });
+          }
         } catch (error) {
           console.error('Error updating claim streak:', error);
           throw error;
@@ -258,12 +297,19 @@ export const useFirebaseUserStore = create<UserState>()(
         if (!telegramId) return;
 
         try {
-          const userRef = doc(db, 'users', telegramId);
-          await updateDoc(userRef, { 
-            last_energy_refill: date,
-            updated_at: serverTimestamp()
-          });
-          set({ lastEnergyRefill: date });
+          // Query by telegram_id instead of using document ID
+          const usersRef = collection(db, 'users');
+          const q = query(usersRef, where('telegram_id', '==', telegramId), limit(1));
+          const querySnapshot = await getDocs(q);
+          
+          if (!querySnapshot.empty) {
+            const userDoc = querySnapshot.docs[0];
+            await updateDoc(userDoc.ref, { 
+              last_energy_refill: date,
+              updated_at: serverTimestamp()
+            });
+            set({ lastEnergyRefill: date });
+          }
         } catch (error) {
           console.error('Error updating last energy refill:', error);
           throw error;
@@ -273,13 +319,16 @@ export const useFirebaseUserStore = create<UserState>()(
       loadUserData: async (telegramId) => {
         console.log('🔄 Loading user data for telegramId:', telegramId);
         try {
-          const userRef = doc(db, 'users', telegramId);
-          const userSnap = await getDoc(userRef);
+          // Query by telegram_id field instead of using telegramId as document ID
+          const usersRef = collection(db, 'users');
+          const q = query(usersRef, where('telegram_id', '==', telegramId), limit(1));
+          const querySnapshot = await getDocs(q);
 
-          console.log('📄 User document exists:', userSnap.exists());
+          console.log('📄 User document exists:', !querySnapshot.empty);
           
-          if (userSnap.exists()) {
-            const userData = userSnap.data() as FirebaseUser;
+          if (!querySnapshot.empty) {
+            const userDoc = querySnapshot.docs[0];
+            const userData = userDoc.data() as FirebaseUser;
             console.log('📊 User data from Firebase:', userData);
             
             // Ensure user has a referral code
@@ -290,7 +339,7 @@ export const useFirebaseUserStore = create<UserState>()(
               console.log('⚠️ No referral code found, generating new one...');
               referralCode = `CP${telegramId}`; // Use full telegram ID with CP prefix
               // Update the user document with the generated referral code
-              await updateDoc(userRef, {
+              await updateDoc(userDoc.ref, {
                 referral_code: referralCode,
                 updated_at: serverTimestamp()
               });
@@ -365,8 +414,9 @@ export const useFirebaseUserStore = create<UserState>()(
             referralCode = `CP${userData.telegram_id!}`; // Use full telegram ID with CP prefix
           }
           
-          const userRef = doc(db, 'users', userData.telegram_id!);
-          await setDoc(userRef, {
+          // Use addDoc to create document with auto-generated ID (matching bot behavior)
+          const usersRef = collection(db, 'users');
+          const docRef = await addDoc(usersRef, {
             ...userData,
             referral_code: referralCode,
             created_at: serverTimestamp(),
@@ -428,14 +478,21 @@ export const useFirebaseUserStore = create<UserState>()(
         if (!telegramId) return;
 
         try {
-          const userRef = doc(db, 'users', telegramId);
-          await updateDoc(userRef, {
-            ...updates,
-            updated_at: serverTimestamp()
-          });
+          // Query by telegram_id instead of using document ID
+          const usersRef = collection(db, 'users');
+          const q = query(usersRef, where('telegram_id', '==', telegramId), limit(1));
+          const querySnapshot = await getDocs(q);
           
-          // Update local state
-          set(updates);
+          if (!querySnapshot.empty) {
+            const userDoc = querySnapshot.docs[0];
+            await updateDoc(userDoc.ref, {
+              ...updates,
+              updated_at: serverTimestamp()
+            });
+            
+            // Update local state
+            set(updates);
+          }
         } catch (error) {
           console.error('Error updating user profile:', error);
           throw error;
@@ -508,19 +565,25 @@ export const useFirebaseUserStore = create<UserState>()(
         if (!telegramId) return;
 
         try {
-          // Update online status
-          const userRef = doc(db, 'users', telegramId);
-          await updateDoc(userRef, {
-            last_active: serverTimestamp()
-          });
+          // Query by telegram_id instead of using document ID
+          const usersRef = collection(db, 'users');
+          const q = query(usersRef, where('telegram_id', '==', telegramId), limit(1));
+          const querySnapshot = await getDocs(q);
+          
+          if (!querySnapshot.empty) {
+            const userDoc = querySnapshot.docs[0];
+            await updateDoc(userDoc.ref, {
+              last_active: serverTimestamp()
+            });
 
-          set(state => ({
-            realTimeData: {
-              ...state.realTimeData,
-              isOnline: true,
-              lastSeen: new Date()
-            }
-          }));
+            set(state => ({
+              realTimeData: {
+                ...state.realTimeData,
+                isOnline: true,
+                lastSeen: new Date()
+              }
+            }));
+          }
         } catch (error) {
           console.error('Error updating real-time stats:', error);
         }
