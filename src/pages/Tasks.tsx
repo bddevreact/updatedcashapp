@@ -1280,6 +1280,98 @@ export default function Tasks() {
             completionCount: 0,
             maxCompletions: 1,
             url: 'https://t.me/bt_community'
+          },
+          // Social Links - One-time only
+          {
+            id: 'facebook_like',
+            title: 'Like Facebook Page',
+            subtitle: 'Like and follow our Facebook page',
+            reward: 10,
+            type: 'social',
+            icon: 'social',
+            buttonText: 'VISIT PAGE',
+            description: 'Like and follow our Facebook page for updates',
+            isActive: true,
+            completionCount: 0,
+            maxCompletions: 1,
+            url: 'https://facebook.com/cashpoints',
+            special: false
+          },
+          {
+            id: 'twitter_follow',
+            title: 'Follow Twitter',
+            subtitle: 'Follow us on Twitter',
+            reward: 8,
+            type: 'social',
+            icon: 'social',
+            buttonText: 'FOLLOW',
+            description: 'Follow us on Twitter for latest updates',
+            isActive: true,
+            completionCount: 0,
+            maxCompletions: 1,
+            url: 'https://twitter.com/cashpoints',
+            special: false
+          },
+          {
+            id: 'instagram_follow',
+            title: 'Follow Instagram',
+            subtitle: 'Follow us on Instagram',
+            reward: 8,
+            type: 'social',
+            icon: 'social',
+            buttonText: 'FOLLOW',
+            description: 'Follow us on Instagram for exclusive content',
+            isActive: true,
+            completionCount: 0,
+            maxCompletions: 1,
+            url: 'https://instagram.com/cashpoints',
+            special: false
+          },
+          {
+            id: 'youtube_subscribe',
+            title: 'Subscribe YouTube',
+            subtitle: 'Subscribe to our YouTube channel',
+            reward: 15,
+            type: 'social',
+            icon: 'social',
+            buttonText: 'SUBSCRIBE',
+            description: 'Subscribe to our YouTube channel for tutorials',
+            isActive: true,
+            completionCount: 0,
+            maxCompletions: 1,
+            url: 'https://youtube.com/cashpoints',
+            special: false
+          },
+          // Special Tasks - One-time only
+          {
+            id: 'referral_bonus',
+            title: 'Refer 5 Friends',
+            subtitle: 'Invite 5 friends to earn bonus',
+            reward: 50,
+            type: 'special',
+            icon: 'referral',
+            buttonText: 'COMPLETE',
+            description: 'Invite 5 friends to earn a special bonus reward',
+            isActive: true,
+            completionCount: 0,
+            maxCompletions: 1,
+            url: '',
+            special: true
+          },
+          {
+            id: 'first_withdrawal',
+            title: 'First Withdrawal',
+            subtitle: 'Complete your first withdrawal',
+            reward: 25,
+            type: 'special',
+            icon: 'referral',
+            buttonText: 'COMPLETE',
+            description: 'Complete your first withdrawal to earn bonus',
+            isActive: true,
+            completionCount: 0,
+            maxCompletions: 1,
+            url: '',
+            special: true
           }
         ];
         setTasks(defaultTasks);

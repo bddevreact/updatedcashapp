@@ -1,23 +1,9 @@
 
 import React from 'react';
 import { TrendingUp, Star, Target, Users, Gift, Zap } from 'lucide-react';
-
-interface StatsCardProps {
-  title: string;
-  value: string | number;
-  icon?: React.ReactNode;
-  color?: string;
-}
-
-const StatsCard: React.FC<StatsCardProps> = ({ title, value, icon, color = "text-white" }) => (
-  <div className="bg-gray-700/30 rounded-xl p-3 flex-1 mx-1 border border-gray-600/30 hover:border-gold/50 transition-all duration-300">
-    <div className="flex items-center justify-center mb-2">
-      {icon && <span className="mr-1">{icon}</span>}
-    <p className="text-gray-400 text-xs">{title}</p>
-    </div>
-    <p className={`font-bold mt-1 text-center ${color}`}>{value}</p>
-  </div>
-);
+import { useReferralLevels } from '../hooks/useReferralLevels';
+import StatsCard from './common/StatsCard';
+import { REFERRAL_LEVELS } from '../utils/constants';
 
 interface StatsCardsRowProps {
   currentLevel: number;
@@ -26,69 +12,11 @@ interface StatsCardsRowProps {
 }
 
 const StatsCardsRow: React.FC<StatsCardsRowProps> = ({ currentLevel, totalReferrals, nextLevelReferrals }) => {
-  // New referral-based leveling system
-  const getLevelInfo = (level: number) => {
-    switch (level) {
-      case 1:
-        return {
-          referralsNeeded: 100,
-          bonus: '৳200',
-          opportunities: 'Level 1 Referral Bonus',
-          color: 'text-green-400',
-          bengaliRequired: '১০০',
-          bengaliBonus: '২০০'
-        };
-      case 2:
-        return {
-          referralsNeeded: 1000,
-          bonus: '৳500',
-          opportunities: 'Level 2 Referral Bonus',
-          color: 'text-blue-400',
-          bengaliRequired: '১০০০',
-          bengaliBonus: '৫০০'
-        };
-      case 3:
-        return {
-          referralsNeeded: 5000,
-          bonus: '৳1,500',
-          opportunities: 'Level 3 Referral Bonus',
-          color: 'text-purple-400',
-          bengaliRequired: '৫০০০',
-          bengaliBonus: '১৫০০'
-        };
-      case 4:
-        return {
-          referralsNeeded: 10000,
-          bonus: '৳3,000',
-          opportunities: 'Level 4 Referral Bonus',
-          color: 'text-gold',
-          bengaliRequired: '১০০০০',
-          bengaliBonus: '৩০০০'
-        };
-      case 5:
-        return {
-          referralsNeeded: 100000,
-          bonus: '৳10,000',
-          opportunities: 'Legendary Status + Maximum Benefits',
-          color: 'text-red-400',
-          bengaliRequired: '১০০০০০',
-          bengaliBonus: '১০০০০'
-        };
-      default:
-        return {
-          referralsNeeded: 100,
-          bonus: '৳200',
-          opportunities: 'Level 1 Referral Bonus',
-          color: 'text-green-400',
-          bengaliRequired: '১০০',
-          bengaliBonus: '২০০'
-        };
-    }
-  };
+  const { getCurrentLevelInfo, getNextLevelInfo, calculateProgress } = useReferralLevels();
 
-  const currentLevelInfo = getLevelInfo(currentLevel);
-  const nextLevelInfo = getLevelInfo(currentLevel + 1);
-  const progressToNext = Math.min((totalReferrals / nextLevelInfo.referralsNeeded) * 100, 100);
+  const currentLevelInfo = getCurrentLevelInfo(currentLevel);
+  const nextLevelInfo = getNextLevelInfo(currentLevel);
+  const progressToNext = nextLevelInfo ? calculateProgress(totalReferrals, nextLevelInfo.level) : 100;
   
   return (
     <div className="mx-4 mb-4">
@@ -108,7 +36,7 @@ const StatsCardsRow: React.FC<StatsCardsRowProps> = ({ currentLevel, totalReferr
         />
         <StatsCard 
           title="Next Level" 
-          value={`${nextLevelInfo.referralsNeeded}`}
+          value={`${nextLevelInfo?.required || 0}`}
           icon={<Target className="w-3 h-3 text-green-400" />}
           color="text-green-400"
         />
@@ -125,7 +53,7 @@ const StatsCardsRow: React.FC<StatsCardsRowProps> = ({ currentLevel, totalReferr
       {/* Progress Text */}
       <div className="text-center mx-1 mb-3">
         <p className="text-xs text-gray-400">
-          {totalReferrals} / {nextLevelInfo.referralsNeeded} referrals to Level {currentLevel + 1}
+          {totalReferrals} / {nextLevelInfo?.required || 0} referrals to Level {currentLevel + 1}
         </p>
         <p className="text-xs text-gold font-medium">
           {progressToNext.toFixed(1)}% Complete
@@ -140,7 +68,7 @@ const StatsCardsRow: React.FC<StatsCardsRowProps> = ({ currentLevel, totalReferr
         </div>
         <div className="text-center">
           <p className="text-xs text-gray-300 mb-1">{currentLevelInfo.opportunities}</p>
-          <p className="text-sm font-bold text-green-400">+{currentLevelInfo.bonus} Bonus</p>
+          <p className="text-sm font-bold text-green-400">+৳{currentLevelInfo.bonus} Bonus</p>
         </div>
       </div>
 
@@ -152,7 +80,7 @@ const StatsCardsRow: React.FC<StatsCardsRowProps> = ({ currentLevel, totalReferr
         </div>
         <div className="text-center">
           <p className="text-xs text-gray-300 mb-1">{nextLevelInfo.opportunities}</p>
-          <p className="text-sm font-bold text-blue-400">+{nextLevelInfo.bonus} Bonus</p>
+          <p className="text-sm font-bold text-blue-400">+৳{nextLevelInfo?.bonus || 0} Bonus</p>
         </div>
       </div>
     </div>

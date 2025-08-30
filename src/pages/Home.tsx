@@ -7,12 +7,27 @@ import ReferralLevelsCard from '../components/ReferralLevelsCard';
 import RecentActivity from '../components/RecentActivity';
 import NotificationCenter from '../components/NotificationCenter';
 import LiveActivityFeed from '../components/LiveActivityFeed';
+
 import { useNavigate } from 'react-router-dom';
 import { useFirebaseUserStore } from '../store/firebaseUserStore';
-import { Users, TrendingUp, DollarSign, Target, Star, Zap, Activity, BarChart3, Calendar, Gift, Crown, Medal, Trophy, ArrowRight, RefreshCw, Settings, Bell, User, LogOut, Home, Wallet, CheckSquare, Share2, Award, DollarSign as DollarSignIcon, Cog, Shield, Bot, UserCheck, UserX, MessageCircle, Eye, EyeOff, Download, Upload, Filter, Search, UserPlus, CheckCircle, XCircle, AlertCircle, Info, HelpCircle, ChevronDown, ChevronUp, Plus, Minus, RotateCcw, Save, Edit, Trash2, Copy, Check, ExternalLink, Link, Hash, Tag } from 'lucide-react';
+import { 
+  Coins, 
+  Zap, 
+  TrendingUp, 
+  Gift, 
+  Calendar,
+  Clock,
+  CheckCircle,
+  XCircle,
+  AlertCircle,
+  RefreshCw,
+  CheckSquare,
+  Users
+} from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { db } from '../lib/firebase';
 import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { useReferralLevels } from '../hooks/useReferralLevels';
 
 const Index: React.FC = () => {
   const navigate = useNavigate();
@@ -23,6 +38,8 @@ const Index: React.FC = () => {
     realTimeData,
     telegramId
   } = useFirebaseUserStore();
+  
+  const { getNextLevelTarget } = useReferralLevels();
   
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
@@ -37,16 +54,7 @@ const Index: React.FC = () => {
   // Calculate level progress with new referral system
   const currentLevelReferrals = stats?.referrals_count || 0;
   
-  // New referral level system: Level 1 = 100, Level 2 = 1000, Level 3 = 5000, Level 4 = 10000
-  const getNextLevelTarget = (currentLevel: number) => {
-    switch (currentLevel) {
-      case 1: return 100;
-      case 2: return 1000;
-      case 3: return 5000;
-      case 4: return 10000;
-      default: return 100; // Default to 100 for level 1
-    }
-  };
+
   
   const nextLevelTarget = getNextLevelTarget(level);
   const levelProgress = Math.min((currentLevelReferrals / nextLevelTarget) * 100, 100);
@@ -160,6 +168,8 @@ const Index: React.FC = () => {
           currentLevel={level}
           currentReferrals={currentLevelReferrals}
         />
+
+
 
         {/* Quick Actions */}
         <motion.div 

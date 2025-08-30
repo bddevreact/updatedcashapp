@@ -1,6 +1,8 @@
 import React from 'react';
 import { motion } from 'framer-motion';
 import { Target, Trophy, Star, Users, Gift } from 'lucide-react';
+import { useReferralLevels } from '../hooks/useReferralLevels';
+import { REFERRAL_LEVELS } from '../utils/constants';
 
 interface ReferralLevelsCardProps {
   currentLevel: number;
@@ -11,66 +13,14 @@ const ReferralLevelsCard: React.FC<ReferralLevelsCardProps> = ({
   currentLevel, 
   currentReferrals 
 }) => {
-  const referralLevels = [
-    {
-      level: 1,
-      required: 100,
-      bonus: 200,
-      xp: 100,
-      color: 'text-green-400',
-      bgColor: 'bg-green-400/10',
-      borderColor: 'border-green-400/20',
-      bengaliRequired: '১০০',
-      bengaliBonus: '২০০'
-    },
-    {
-      level: 2,
-      required: 1000,
-      bonus: 500,
-      xp: 200,
-      color: 'text-blue-400',
-      bgColor: 'bg-blue-400/10',
-      borderColor: 'border-blue-400/20',
-      bengaliRequired: '১০০০',
-      bengaliBonus: '৫০০'
-    },
-    {
-      level: 3,
-      required: 5000,
-      bonus: 1500,
-      xp: 500,
-      color: 'text-purple-400',
-      bgColor: 'bg-purple-400/10',
-      borderColor: 'border-purple-400/20',
-      bengaliRequired: '৫০০০',
-      bengaliBonus: '১৫০০'
-    },
-    {
-      level: 4,
-      required: 10000,
-      bonus: 3000,
-      xp: 1000,
-      color: 'text-gold',
-      bgColor: 'bg-gold/10',
-      borderColor: 'border-gold/20',
-      bengaliRequired: '১০০০০',
-      bengaliBonus: '৩০০০'
-    }
-  ];
+  const { getCurrentLevelInfo, getNextLevelInfo, calculateProgress } = useReferralLevels();
 
-  const getCurrentLevelInfo = () => {
-    return referralLevels.find(level => level.level === currentLevel) || referralLevels[0];
-  };
-
-  const getNextLevelInfo = () => {
-    return referralLevels.find(level => level.level === currentLevel + 1);
-  };
-
-  const currentLevelInfo = getCurrentLevelInfo();
-  const nextLevelInfo = getNextLevelInfo();
+  const currentLevelInfo = getCurrentLevelInfo(currentLevel);
+  const nextLevelInfo = getNextLevelInfo(currentLevel);
+  const referralLevels = REFERRAL_LEVELS;
 
   const progressToNext = nextLevelInfo 
-    ? Math.min((currentReferrals / nextLevelInfo.required) * 100, 100)
+    ? calculateProgress(currentReferrals, nextLevelInfo.level)
     : 100;
 
   return (

@@ -21,7 +21,7 @@ class BotConfig:
     REQUIRED_GROUP_NAME: str = "Bull Trading Community (BD)"
     
     # App settings
-    MINI_APP_URL: str = "https://super-donut-5e4873.netlify.app/"
+    MINI_APP_URL: str = "https://helpful-khapse-deec27.netlify.app/"
     
     # Reward settings
     REFERRAL_REWARD: int = 2

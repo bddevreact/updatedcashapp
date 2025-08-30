@@ -52,6 +52,7 @@ interface UserState {
   
   // Referral system
   referralCode: string | null;
+  referralLink: string | null;
   referredBy: string | null;
   
   // Task & Activity stats
@@ -85,6 +86,8 @@ interface UserState {
   startRealTimeUpdates: () => void;
   stopRealTimeUpdates: () => void;
   refreshUserData: () => Promise<void>;
+  syncReferralCodes: () => Promise<void>;
+  refreshBalance: () => Promise<void>;
 }
 
 export const useFirebaseUserStore = create<UserState>()(
@@ -115,6 +118,7 @@ export const useFirebaseUserStore = create<UserState>()(
       isBanned: false,
       banReason: null,
       referralCode: null,
+      referralLink: null,
       referredBy: null,
       stats: {
         referrals_count: 0,
@@ -143,11 +147,20 @@ export const useFirebaseUserStore = create<UserState>()(
 
         try {
           const userRef = doc(db, 'users', telegramId);
-          await updateDoc(userRef, { 
-            balance: amount,
-            updated_at: serverTimestamp()
-          });
-          set({ balance: amount });
+          const userSnap = await getDoc(userRef);
+          
+          if (userSnap.exists()) {
+            const userData = userSnap.data();
+            const currentBalance = userData.balance || 0;
+            const newBalance = currentBalance + amount; // ✅ Increment balance
+            
+            await updateDoc(userRef, { 
+              balance: newBalance,
+              total_earnings: (userData.total_earnings || 0) + amount, // ✅ Also update total earnings
+              updated_at: serverTimestamp()
+            });
+            set({ balance: newBalance, totalEarnings: (get().totalEarnings || 0) + amount });
+          }
         } catch (error) {
           console.error('Error updating balance:', error);
           throw error;
@@ -258,24 +271,54 @@ export const useFirebaseUserStore = create<UserState>()(
       },
 
       loadUserData: async (telegramId) => {
+        console.log('🔄 Loading user data for telegramId:', telegramId);
         try {
           const userRef = doc(db, 'users', telegramId);
           const userSnap = await getDoc(userRef);
 
+          console.log('📄 User document exists:', userSnap.exists());
+          
           if (userSnap.exists()) {
             const userData = userSnap.data() as FirebaseUser;
+            console.log('📊 User data from Firebase:', userData);
             
             // Ensure user has a referral code
             let referralCode = userData.referral_code;
+            console.log('🔗 Original referral code:', referralCode);
+            
             if (!referralCode) {
-              referralCode = `BT${telegramId.slice(-6).toUpperCase()}`;
+              console.log('⚠️ No referral code found, generating new one...');
+              referralCode = `CP${telegramId}`; // Use full telegram ID with CP prefix
               // Update the user document with the generated referral code
               await updateDoc(userRef, {
                 referral_code: referralCode,
                 updated_at: serverTimestamp()
               });
+              console.log('✅ Generated and saved referral code:', referralCode);
             }
             
+            // Ensure referral code exists in referralCodes collection
+            try {
+              const referralCodeRef = doc(db, 'referralCodes', referralCode);
+              const referralCodeDoc = await getDoc(referralCodeRef);
+              
+              if (!referralCodeDoc.exists()) {
+                console.log('⚠️ Referral code not found in referralCodes collection, creating...');
+                await setDoc(referralCodeRef, {
+                  user_id: telegramId,
+                  referral_code: referralCode,
+                  is_active: true,
+                  created_at: serverTimestamp(),
+                  total_uses: 0,
+                  total_earnings: 0
+                });
+                console.log('✅ Created referral code document in referralCodes collection:', referralCode);
+              }
+            } catch (referralError) {
+              console.error('⚠️ Error ensuring referral code in referralCodes collection:', referralError);
+            }
+            
+            console.log('🎯 Setting user state with referral code:', referralCode);
             set({
               telegramId: userData.telegram_id,
               name: userData.first_name || userData.username || 'User',
@@ -295,6 +338,7 @@ export const useFirebaseUserStore = create<UserState>()(
               totalEarnings: userData.total_earnings || 0,
               totalReferrals: userData.total_referrals || 0,
               referralCode: referralCode,
+              referralLink: referralCode ? `https://t.me/CashPoinntbot?start=${referralCode}` : null,
               referredBy: userData.referred_by || null,
               isVerified: userData.is_verified || false,
               isBanned: userData.is_banned || false,
@@ -303,9 +347,12 @@ export const useFirebaseUserStore = create<UserState>()(
               lastEnergyRefill: userData.last_energy_refill || null,
               lastActive: userData.last_active || new Date()
             });
+            console.log('✅ User data loaded successfully');
+          } else {
+            console.log('❌ User document does not exist in Firebase');
           }
         } catch (error) {
-          console.error('Error loading user data:', error);
+          console.error('❌ Error loading user data:', error);
           throw error;
         }
       },
@@ -315,7 +362,7 @@ export const useFirebaseUserStore = create<UserState>()(
           // Generate unique referral code if not provided
           let referralCode = userData.referral_code;
           if (!referralCode) {
-            referralCode = `BT${userData.telegram_id!.slice(-6).toUpperCase()}`;
+            referralCode = `CP${userData.telegram_id!}`; // Use full telegram ID with CP prefix
           }
           
           const userRef = doc(db, 'users', userData.telegram_id!);
@@ -325,6 +372,23 @@ export const useFirebaseUserStore = create<UserState>()(
             created_at: serverTimestamp(),
             updated_at: serverTimestamp()
           });
+          
+          // Also create referral code document in referralCodes collection
+          try {
+            const referralCodeRef = doc(db, 'referralCodes', referralCode);
+            await setDoc(referralCodeRef, {
+              user_id: userData.telegram_id!,
+              referral_code: referralCode,
+              is_active: true,
+              created_at: serverTimestamp(),
+              total_uses: 0,
+              total_earnings: 0
+            });
+            console.log('✅ Referral code document created in referralCodes collection:', referralCode);
+          } catch (referralError) {
+            console.error('⚠️ Error creating referral code document:', referralError);
+            // Continue even if referral code creation fails
+          }
           
           // Set local state
           set({
@@ -346,6 +410,7 @@ export const useFirebaseUserStore = create<UserState>()(
             totalEarnings: userData.total_earnings || 0,
             totalReferrals: userData.total_referrals || 0,
             referralCode: referralCode,
+            referralLink: referralCode ? `https://t.me/CashPoinntbot?start=${referralCode}` : null,
             referredBy: userData.referred_by || null,
             isVerified: userData.is_verified || false,
             isBanned: userData.is_banned || false,
@@ -496,6 +561,73 @@ export const useFirebaseUserStore = create<UserState>()(
         const { telegramId } = get();
         if (telegramId) {
           await get().loadUserData(telegramId);
+        }
+      },
+
+      // Refresh balance from Firebase
+      refreshBalance: async () => {
+        const { telegramId } = get();
+        if (!telegramId) return;
+
+        try {
+          console.log('🔄 Refreshing balance for user:', telegramId);
+          const userRef = doc(db, 'users', telegramId);
+          const userSnap = await getDoc(userRef);
+          
+          if (userSnap.exists()) {
+            const userData = userSnap.data();
+            const currentBalance = userData.balance || 0;
+            console.log('💰 Current balance from Firebase:', currentBalance);
+            
+            set({ balance: currentBalance });
+            console.log('✅ Balance refreshed successfully');
+          } else {
+            console.log('❌ User not found in Firebase');
+          }
+        } catch (error) {
+          console.error('❌ Error refreshing balance:', error);
+        }
+      },
+
+      // Sync referral codes for existing users
+      syncReferralCodes: async () => {
+        const { telegramId } = get();
+        if (!telegramId) return;
+
+        try {
+          console.log('🔄 Syncing referral codes for user:', telegramId);
+          
+          // Get user's referral code
+          const userRef = doc(db, 'users', telegramId);
+          const userSnap = await getDoc(userRef);
+          
+          if (userSnap.exists()) {
+            const userData = userSnap.data();
+            const referralCode = userData.referral_code;
+            
+            if (referralCode) {
+              // Check if referral code exists in referralCodes collection
+              const referralCodeRef = doc(db, 'referralCodes', referralCode);
+              const referralCodeSnap = await getDoc(referralCodeRef);
+              
+              if (!referralCodeSnap.exists()) {
+                // Create missing referral code document
+                await setDoc(referralCodeRef, {
+                  user_id: telegramId,
+                  referral_code: referralCode,
+                  is_active: true,
+                  created_at: serverTimestamp(),
+                  total_uses: 0,
+                  total_earnings: 0
+                });
+                console.log('✅ Created missing referral code document:', referralCode);
+              } else {
+                console.log('⏭️ Referral code already exists in referralCodes collection:', referralCode);
+              }
+            }
+          }
+        } catch (error) {
+          console.error('❌ Error syncing referral codes:', error);
         }
       }
     }),

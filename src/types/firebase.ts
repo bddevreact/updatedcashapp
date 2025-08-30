@@ -62,11 +62,39 @@ export interface Referral {
   id?: string;
   referrer_id: string;
   referred_id: string;
-  status: 'pending' | 'completed' | 'cancelled';
+  status: 'pending' | 'completed' | 'cancelled' | 'pending_group_join';
   reward_amount: number;
   reward_given: boolean;
   created_at: Date;
   completed_at?: Date;
+  // Bot-specific fields for enhanced functionality
+  referral_code?: string;
+  auto_start_triggered?: boolean;
+  bonus_amount?: number;
+  is_active?: boolean;
+  rejoin_count?: number;
+  group_join_verified?: boolean;
+}
+
+export interface ReferralCode {
+  id?: string;
+  user_id: string;
+  referral_code: string;
+  is_active: boolean;
+  created_at: Date;
+  total_uses: number;
+  total_earnings: number;
+}
+
+export interface Earnings {
+  id?: string;
+  user_id: string;
+  amount: number;
+  type: 'referral' | 'task' | 'bonus' | 'daily_claim' | 'mining';
+  description: string;
+  created_at: Date;
+  referral_id?: string;
+  task_id?: string;
 }
 
 export interface Task {
@@ -113,6 +141,8 @@ export interface FirebaseCollections {
   achievements: Achievement;
   notifications: Notification;
   referrals: Referral;
+  referral_codes: ReferralCode;
+  earnings: Earnings;
   tasks: Task;
   withdrawals: Withdrawal;
   admin_users: AdminUser;

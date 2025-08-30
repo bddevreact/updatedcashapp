@@ -41,7 +41,18 @@ interface ReferralStats {
 }
 
 export default function Referrals() {
-  const { addNotification, referralCode, loadUserData } = useFirebaseUserStore();
+  const { addNotification, referralCode, telegramId, loadUserData } = useFirebaseUserStore();
+
+  // Debug logging for referral link generation
+  useEffect(() => {
+    console.log('🔍 Referrals Debug Info:', {
+      telegramId,
+      referralCode,
+      hasTelegramId: !!telegramId,
+      hasReferralCode: !!referralCode,
+      storeState: useFirebaseUserStore.getState()
+    });
+  }, [telegramId, referralCode]);
   const [copied, setCopied] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'analytics' | 'enhanced' | 'settings'>('overview');
@@ -147,16 +158,12 @@ export default function Referrals() {
     }
   };
 
-  // Load real referral stats from database
-  const { 
-    telegramId, 
-    balance, 
-    totalReferrals, 
-    totalEarnings 
-  } = useFirebaseUserStore();
+
 
   useEffect(() => {
-    loadReferralStats();
+    if (telegramId) {
+      loadReferralStats();
+    }
   }, [telegramId]);
 
   // Force reload user data if referral code is missing
@@ -166,6 +173,27 @@ export default function Referrals() {
       loadUserData(telegramId);
     }
   }, [telegramId, referralCode, loadUserData]);
+
+  // Retry mechanism for loading user data
+  useEffect(() => {
+    const retryLoadUserData = async () => {
+      // Try to get telegram ID from WebApp if not available in store
+      if (!telegramId && window.Telegram?.WebApp?.initDataUnsafe?.user?.id) {
+        const webAppUserId = window.Telegram.WebApp.initDataUnsafe.user.id.toString();
+        console.log('🔄 Retrying to load user data for WebApp user:', webAppUserId);
+        try {
+          await loadUserData(webAppUserId);
+        } catch (error) {
+          console.error('❌ Failed to load user data on retry:', error);
+        }
+      }
+    };
+
+    // Retry after 2 seconds if user data is not loaded
+    const timeoutId = setTimeout(retryLoadUserData, 2000);
+    
+    return () => clearTimeout(timeoutId);
+  }, [telegramId, loadUserData]);
 
   const loadReferralStats = async () => {
     if (!telegramId) return;
@@ -363,11 +391,38 @@ export default function Referrals() {
 
   // Generate individual referral link for current user
   const generateIndividualReferralLink = () => {
-    console.log('🔗 Generating referral link...', { telegramId, referralCode });
+    console.log('🔗 Generating referral link...', { 
+      telegramId, 
+      referralCode,
+      hasTelegramId: !!telegramId,
+      hasReferralCode: !!referralCode,
+      userStore: useFirebaseUserStore.getState()
+    });
     
-    if (!telegramId) {
+    // Try to get telegram ID from multiple sources
+    let currentTelegramId = telegramId;
+    
+    if (!currentTelegramId) {
+      // Try to get from WebApp
+      if (window.Telegram?.WebApp?.initDataUnsafe?.user?.id) {
+        currentTelegramId = window.Telegram.WebApp.initDataUnsafe.user.id.toString();
+        console.log('🔄 Got telegram ID from WebApp:', currentTelegramId);
+      }
+      // Try development fallback
+      else if (process.env.NODE_ENV === 'development') {
+        currentTelegramId = '6873819352'; // Test user ID
+        console.log('🛠️ Development mode: Using test telegram ID:', currentTelegramId);
+      }
+    }
+    
+    if (!currentTelegramId) {
       console.warn('❌ No telegram ID available for referral link generation');
-      return '';
+      console.log('🔍 Available user data:', {
+        telegramId,
+        referralCode,
+        userStore: useFirebaseUserStore.getState()
+      });
+      return 'Loading referral link...';
     }
     
     // Get user's unique referral code from database or generate fallback
@@ -375,7 +430,7 @@ export default function Referrals() {
     
     if (!userReferralCode) {
       console.warn('⚠️ No referral code in store, generating fallback...');
-      userReferralCode = `BT${telegramId.slice(-6).toUpperCase()}`;
+      userReferralCode = `CP${currentTelegramId}`; // Use full telegram ID with CP prefix
       
       // Try to update the store with the generated code
       // This will trigger a re-render when the actual code is loaded
@@ -383,7 +438,7 @@ export default function Referrals() {
     }
     
     // Create bot referral link with auto-start trigger
-    const botUsername = 'CashPointsbot'; // Update with your actual bot username
+    const botUsername = 'CashPoinntbot'; // Update with your actual bot username
     const individualLink = `https://t.me/${botUsername}?start=${userReferralCode}`;
     
     console.log('✅ Generated referral link:', individualLink);
@@ -1884,13 +1939,15 @@ export default function Referrals() {
         <div className="flex items-center gap-2 mb-4">
           <input
             type="text"
-            value={referralLink}
+            value={referralLink || 'Loading referral link...'}
             readOnly
             className="flex-1 bg-gray-800 text-white px-4 py-3 rounded-lg text-sm border border-gray-600 focus:border-gold focus:outline-none"
+            placeholder="Your referral link will appear here"
           />
           <button
             onClick={copyReferralLink}
-            className="bg-gradient-to-r from-gold to-yellow-500 text-navy px-4 py-3 rounded-lg hover:from-yellow-400 hover:to-gold transition-all duration-300"
+            disabled={!referralLink || referralLink === 'Loading referral link...'}
+            className="bg-gradient-to-r from-gold to-yellow-500 text-navy px-4 py-3 rounded-lg hover:from-yellow-400 hover:to-gold transition-all duration-300 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {copied ? 'Copied!' : <Copy className="w-4 h-4" />}
           </button>

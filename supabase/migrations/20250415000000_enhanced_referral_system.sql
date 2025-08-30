@@ -80,7 +80,7 @@ CREATE TABLE IF NOT EXISTS global_config (
 -- Insert default referral system configuration
 INSERT INTO global_config (config_key, config_value, config_type, description) VALUES
 ('referral_system', '{"enabled": true, "reward_amount": 2, "require_group_join": true, "auto_start_enabled": true}', 'json', 'Main referral system configuration'),
-('individual_referral_system', '{"base_url": "https://super-donut-5e4873.netlify.app/", "referral_reward": 2, "is_active": true, "tracking_enabled": true}', 'json', 'Individual referral link configuration'),
+('individual_referral_system', '{"base_url": "https://helpful-khapse-deec27.netlify.app/", "referral_reward": 2, "is_active": true, "tracking_enabled": true}', 'json', 'Individual referral link configuration'),
 ('group_config', '{"required_group_id": -1001234567890, "required_group_link": "https://t.me/your_group_link", "required_group_name": "Cash Points Community"}', 'json', 'Required group configuration'),
 ('referral_levels', '{"levels": [{"level": 1, "required": 100, "bonus": 200}, {"level": 2, "required": 1000, "bonus": 500}, {"level": 3, "required": 5000, "bonus": 1500}, {"level": 4, "required": 10000, "bonus": 3000}]}', 'json', 'Referral level configuration')
 ON CONFLICT (config_key) DO NOTHING;

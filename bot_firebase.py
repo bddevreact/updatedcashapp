@@ -28,7 +28,7 @@ def generate_referral_code(user_id: int) -> str:
     """Generate unique referral code for user"""
     try:
         if not db:
-            return f"BT{str(user_id)[-6:].upper()}"
+            return f"CP{str(user_id)}"  # Use full telegram ID with CP prefix
         
         user_id_str = str(user_id)
         
@@ -42,8 +42,7 @@ def generate_referral_code(user_id: int) -> str:
                 return user_data['referral_code']
         
         # Generate new referral code
-        timestamp = str(int(datetime.now().timestamp()))
-        referral_code = f"BT{str(user_id)[-6:].upper()}{timestamp[-3:]}"
+        referral_code = f"CP{str(user_id)}"  # Use full telegram ID with CP prefix
         
         # Create user document if doesn't exist
         user_data = {
@@ -75,13 +74,13 @@ def generate_referral_code(user_id: int) -> str:
         return referral_code
     except Exception as e:
         print(f"❌ Error generating referral code: {e}")
-        return f"BT{str(user_id)[-6:].upper()}"
+        return f"CP{str(user_id)}"  # Use full telegram ID with CP prefix
 
 def ensure_user_referral_code(user_id: int, username: str = None) -> str:
     """Ensure user has a referral code, create if missing"""
     try:
         if not db:
-            return f"BT{str(user_id)[-6:].upper()}"
+            return f"CP{str(user_id)}"  # Use full telegram ID with CP prefix
         
         user_id_str = str(user_id)
         user_ref = db.collection('users').document(user_id_str)
@@ -114,7 +113,7 @@ def ensure_user_referral_code(user_id: int, username: str = None) -> str:
         return generate_referral_code(user_id)
     except Exception as e:
         print(f"❌ Error ensuring user referral code: {e}")
-        return f"BT{str(user_id)[-6:].upper()}"
+        return f"CP{str(user_id)}"  # Use full telegram ID with CP prefix
 
 def get_user_data(user_id: int):
     """Get user data from Firebase"""

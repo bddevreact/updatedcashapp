@@ -36,7 +36,7 @@ const ReferralDebug: React.FC = () => {
         storeBalance: balance,
         
         // Generated Link
-        generatedLink: referralCode ? `https://t.me/CashPointsbot?start=${referralCode}` : 'No referral code',
+        generatedLink: referralCode ? `https://t.me/CashPoinntbot?start=${referralCode}` : 'No referral code',
         
         // Window Telegram Object
         windowTelegram: window.Telegram,
@@ -85,7 +85,7 @@ const ReferralDebug: React.FC = () => {
           {referralCode ? (
             <div>
               <p className="text-green-400">✅ Link Generated:</p>
-              <p className="text-blue-300 break-all">{`https://t.me/CashPointsbot?start=${referralCode}`}</p>
+              <p className="text-blue-300 break-all">{`https://t.me/CashPoinntbot?start=${referralCode}`}</p>
             </div>
           ) : (
             <p className="text-red-400">❌ No referral code found</p>

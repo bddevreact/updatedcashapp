@@ -1,6 +1,7 @@
 
 import React from 'react';
 import { Share2, TrendingUp, DollarSign } from 'lucide-react';
+import { formatCurrency } from '../utils/currency';
 
 interface BalanceCardProps {
   balance: number;
@@ -10,10 +11,6 @@ interface BalanceCardProps {
 
 const BalanceCard: React.FC<BalanceCardProps> = ({ balance, fiatValue, percentChange }) => {
   const isPositive = percentChange >= 0;
-  
-  const formatCurrency = (amount: number) => {
-    return `৳${amount.toLocaleString('en-IN')}`;
-  };
   
   return (
     <div className="bg-gradient-to-br from-green-600 to-green-700 rounded-2xl p-4 mx-4 mb-4 border border-green-500/30">

@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { db } from '../lib/firebase';
 import { collection, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
 import EarningsAnalytics from '../components/EarningsAnalytics';
+import { formatCurrency } from '../utils/currency';
 
 interface Earning {
   id: string;
@@ -304,16 +305,14 @@ export default function Earnings() {
     return () => clearTimeout(timeout);
   }, [isLoading]);
 
-  const formatCurrency = (amount: number) => {
-    return `৳${amount.toLocaleString('en-IN')}`;
-  };
+
 
   // Calculate earnings breakdown
   const getEarningsBreakdown = () => {
     if (!userStats) return { task: 0, referral: 0, total: 0 };
 
     // Calculate task earnings (total earnings minus referral bonuses)
-    const referralBonus = (userStats.total_referrals || 0) * 50; // Assuming 50 per referral
+    const referralBonus = (userStats.total_referrals || 0) * 2; // ✅ 2 per referral (correct amount)
     const taskEarnings = Math.max(0, (userStats.total_earnings || 0) - referralBonus);
 
     return {

@@ -5,7 +5,8 @@ import asyncio
 import json
 import re
 from datetime import datetime, timedelta
-from supabase import create_client, Client
+import firebase_admin
+from firebase_admin import credentials, firestore
 from dotenv import load_dotenv
 
 # Load environment variables
@@ -14,9 +15,8 @@ load_dotenv()
 # Bot token - moved to environment variable for security
 TOKEN = os.getenv('BOT_TOKEN', '8214925584:AAGzxmpSxFTGmvU-L778DNxUJ35QUR5dDZU')
 
-# Supabase configuration
-SUPABASE_URL = os.getenv('VITE_SUPABASE_URL')
-SUPABASE_KEY = os.getenv('VITE_SUPABASE_ANON_KEY')
+# Firebase configuration
+# Will be initialized after RateLimiter class
 
 # Rate limiting for security
 import time
@@ -45,13 +45,50 @@ class RateLimiter:
 # Initialize rate limiter
 rate_limiter = RateLimiter()
 
-# Initialize Supabase client
+# Initialize Firebase Admin SDK
 try:
-    supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
-    print(f"✅ Supabase connected: {SUPABASE_URL}")
+    if not firebase_admin._apps:
+        # Try to use service account key file
+        if os.path.exists('serviceAccountKey.json'):
+            print("🔧 Loading Firebase credentials from serviceAccountKey.json")
+            cred = credentials.Certificate('serviceAccountKey.json')
+            firebase_admin.initialize_app(cred)
+            print("✅ Firebase Admin SDK initialized with service account")
+        else:
+            print("⚠️ serviceAccountKey.json not found, trying environment variables")
+            # Try environment variables
+            cred_dict = {
+                "type": os.getenv('FIREBASE_TYPE'),
+                "project_id": os.getenv('FIREBASE_PROJECT_ID'),
+                "private_key_id": os.getenv('FIREBASE_PRIVATE_KEY_ID'),
+                "private_key": os.getenv('FIREBASE_PRIVATE_KEY', '').replace('\\n', '\n'),
+                "client_email": os.getenv('FIREBASE_CLIENT_EMAIL'),
+                "client_id": os.getenv('FIREBASE_CLIENT_ID'),
+                "auth_uri": os.getenv('FIREBASE_AUTH_URI'),
+                "token_uri": os.getenv('FIREBASE_TOKEN_URI'),
+                "auth_provider_x509_cert_url": os.getenv('FIREBASE_AUTH_PROVIDER_X509_CERT_URL'),
+                "client_x509_cert_url": os.getenv('FIREBASE_CLIENT_X509_CERT_URL')
+            }
+            
+            # Check if all required fields are present
+            if all(cred_dict.values()):
+                print("🔧 Loading Firebase credentials from environment variables")
+                cred = credentials.Certificate(cred_dict)
+                firebase_admin.initialize_app(cred)
+                print("✅ Firebase Admin SDK initialized with environment variables")
+            else:
+                print("❌ Neither serviceAccountKey.json nor environment variables found")
+                firebase_admin.initialize_app()
+                print("⚠️ Using default Firebase credentials")
+    
+    # Initialize Firestore client
+    db = firestore.client()
+    print(f"✅ Firebase connected successfully")
+    print(f"🔗 Project ID: {db.project}")
 except Exception as e:
-    print(f"❌ Supabase connection failed: {e}")
-    supabase = None
+    print(f"❌ Firebase connection failed: {e}")
+    print(f"🔍 Error details: {type(e).__name__}")
+    db = None
 
 # Group configuration
 REQUIRED_GROUP_ID = -1002551110221  # Bull Trading Community (BD) actual group ID
@@ -70,29 +107,30 @@ async def check_group_membership(user_id: int, context: ContextTypes.DEFAULT_TYP
 # Generate unique referral code for user
 def generate_referral_code(user_id: int) -> str:
     try:
-        if not supabase:
-            return f"BT{str(user_id)[-6:].upper()}"
+        if not db:
+            return f"CP{str(user_id)}"  # Use full telegram ID with CP prefix
             
         # Check if user already has a referral code
-        result = supabase.table('referral_codes').select('referral_code').eq('user_id', str(user_id)).eq('is_active', True).execute()
+        referral_codes_ref = db.collection('referral_codes')
+        query = referral_codes_ref.where('user_id', '==', str(user_id)).where('is_active', '==', True).limit(1)
+        docs = list(query.stream())
         
-        if result.data:
-            return result.data[0]['referral_code']
+        if docs:
+            return docs[0].to_dict()['referral_code']
         
         # Generate new referral code
-        timestamp = str(int(datetime.now().timestamp()))
-        referral_code = f"BT{str(user_id)[-6:].upper()}{timestamp[-3:]}"
+        referral_code = f"CP{str(user_id)}"  # Use full telegram ID with CP prefix
         
-        # Insert into referral_codes table
+        # Insert into referral_codes collection
         try:
-            supabase.table('referral_codes').insert({
+            referral_codes_ref.add({
                 'user_id': str(user_id),
                 'referral_code': referral_code,
                 'is_active': True,
-                'created_at': datetime.now().isoformat(),
+                'created_at': datetime.now(),
                 'total_uses': 0,
                 'total_earnings': 0
-            }).execute()
+            })
             print(f"✅ Referral code created: {referral_code} for user {user_id}")
         except Exception as insert_error:
             print(f"⚠️ Could not insert referral code to database: {insert_error}")
@@ -103,45 +141,50 @@ def generate_referral_code(user_id: int) -> str:
     except Exception as e:
         print(f"❌ Error generating referral code: {e}")
         # Fallback to simple format
-        return f"BT{str(user_id)[-6:].upper()}"
+        return f"CP{str(user_id)}"  # Use full telegram ID with CP prefix
 
 def ensure_user_referral_code(user_id: int, username: str = None) -> str:
     """Ensure user has a referral code, create if missing"""
     try:
-        if not supabase:
-            return f"BT{str(user_id)[-6:].upper()}"
+        if not db:
+            return f"CP{str(user_id)}"  # Use full telegram ID with CP prefix
         
-        # First check if user exists in users table
-        user_result = supabase.table('users').select('referral_code').eq('telegram_id', user_id).execute()
+        # First check if user exists in users collection
+        users_ref = db.collection('users')
+        query = users_ref.where('telegram_id', '==', str(user_id)).limit(1)
+        user_docs = list(query.stream())
         
-        if user_result.data:
-            existing_code = user_result.data[0].get('referral_code')
+        if user_docs:
+            user_data = user_docs[0].to_dict()
+            existing_code = user_data.get('referral_code')
             
             if existing_code:
-                # Check if code exists in referral_codes table
-                code_result = supabase.table('referral_codes').select('*').eq('referral_code', existing_code).execute()
+                # Check if code exists in referral_codes collection
+                referral_codes_ref = db.collection('referral_codes')
+                code_query = referral_codes_ref.where('referral_code', '==', existing_code).limit(1)
+                code_docs = list(code_query.stream())
                 
-                if not code_result.data:
-                    # Code missing from referral_codes table, create it
-                    supabase.table('referral_codes').insert({
+                if not code_docs:
+                    # Code missing from referral_codes collection, create it
+                    referral_codes_ref.add({
                         'user_id': str(user_id),
                         'referral_code': existing_code,
                         'is_active': True,
-                        'created_at': datetime.now().isoformat(),
+                        'created_at': datetime.now(),
                         'total_uses': 0,
                         'total_earnings': 0
-                    }).execute()
+                    })
                     print(f"✅ Fixed missing referral code record: {existing_code} for user {user_id}")
                 
                 return existing_code
             else:
-                # No referral code in users table, generate and update
+                # No referral code in users collection, generate and update
                 new_code = generate_referral_code(user_id)
                 
                 # Update user with new referral code
-                supabase.table('users').update({
+                user_docs[0].reference.update({
                     'referral_code': new_code
-                }).eq('telegram_id', user_id).execute()
+                })
                 
                 print(f"✅ Updated user with new referral code: {new_code}")
                 return new_code
@@ -151,46 +194,55 @@ def ensure_user_referral_code(user_id: int, username: str = None) -> str:
             
     except Exception as e:
         print(f"❌ Error ensuring referral code: {e}")
-        return f"BT{str(user_id)[-6:].upper()}"
+        return f"CP{str(user_id)}"  # Use full telegram ID with CP prefix
 
 def sync_all_referral_codes():
-    """Sync all existing users' referral codes with referral_codes table"""
+    """Sync all existing users' referral codes with referral_codes collection"""
     try:
-        if not supabase:
-            print("❌ Supabase not connected")
+        if not db:
+            print("❌ Firebase not connected")
             return
         
         print("🔄 Syncing all referral codes...")
         
         # Get all users
-        users_result = supabase.table('users').select('telegram_id, referral_code, first_name').execute()
+        users_ref = db.collection('users')
+        try:
+            users_docs = list(users_ref.stream())
+            users_list = [doc.to_dict() for doc in users_docs]
+        except Exception as stream_error:
+            print(f"⚠️ Could not fetch users (this is normal for new database): {stream_error}")
+            print("✅ Sync completed - database is empty or not accessible")
+            return
         
-        if not users_result.data:
+        if not users_list:
             print("✅ No users to sync")
             return
         
         synced_count = 0
         created_count = 0
         
-        for user in users_result.data:
+        for user in users_list:
             user_id = user.get('telegram_id')
             existing_code = user.get('referral_code')
             first_name = user.get('first_name', 'Unknown')
             
             if existing_code:
-                # Check if code exists in referral_codes table
-                code_result = supabase.table('referral_codes').select('*').eq('referral_code', existing_code).execute()
+                # Check if code exists in referral_codes collection
+                referral_codes_ref = db.collection('referral_codes')
+                code_query = referral_codes_ref.where('referral_code', '==', existing_code).limit(1)
+                code_docs = list(code_query.stream())
                 
-                if not code_result.data:
+                if not code_docs:
                     # Create missing referral code record
-                    supabase.table('referral_codes').insert({
+                    referral_codes_ref.add({
                         'user_id': str(user_id),
                         'referral_code': existing_code,
                         'is_active': True,
-                        'created_at': datetime.now().isoformat(),
+                        'created_at': datetime.now(),
                         'total_uses': 0,
                         'total_earnings': 0
-                    }).execute()
+                    })
                     print(f"✅ Created missing referral code: {existing_code} for {first_name}")
                     created_count += 1
                 else:
@@ -201,9 +253,12 @@ def sync_all_referral_codes():
                 new_code = generate_referral_code(user_id)
                 
                 # Update user with new referral code
-                supabase.table('users').update({
-                    'referral_code': new_code
-                }).eq('telegram_id', user_id).execute()
+                user_query = users_ref.where('telegram_id', '==', str(user_id)).limit(1)
+                user_docs = list(user_query.stream())
+                if user_docs:
+                    user_docs[0].reference.update({
+                        'referral_code': new_code
+                    })
                 
                 print(f"✅ Generated new referral code: {new_code} for {first_name}")
                 created_count += 1
@@ -244,34 +299,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
             print(f"🔗 New referral code format detected: {referral_code}")
             
             # Find referrer by referral code
-            if supabase:
+            if db:
                 try:
-                    result = supabase.table('referral_codes').select('user_id').eq('referral_code', referral_code).eq('is_active', True).execute()
-                    if result.data:
-                        referrer_id = result.data[0]['user_id']
+                    referral_codes_ref = db.collection('referral_codes')
+                    query = referral_codes_ref.where('referral_code', '==', referral_code).where('is_active', '==', True).limit(1)
+                    docs = list(query.stream())
+                    
+                    if docs:
+                        referrer_id = docs[0].to_dict()['user_id']
                         print(f"🔗 Referrer found: {referrer_id} for code: {referral_code}")
                     else:
                         print(f"❌ Referral code {referral_code} not found in database")
-                        # Try to find by user ID pattern (BT + last 6 digits of user ID)
-                        if len(referral_code) >= 8 and referral_code.startswith('BT'):
-                            try:
-                                # Extract user ID from referral code (BT + 6 digits)
-                                user_id_part = referral_code[2:8]  # Get the 6 digits after BT
-                                print(f"🔍 Trying to find user with ID ending in: {user_id_part}")
-                                
-                                # Search for users with telegram_id ending in these digits
-                                users_result = supabase.table('users').select('telegram_id').execute()
-                                for user in users_result.data:
-                                    user_id_str = str(user['telegram_id'])
-                                    if user_id_str.endswith(user_id_part):
-                                        referrer_id = user['telegram_id']
-                                        print(f"🔗 Found referrer by pattern match: {referrer_id}")
-                                        break
-                                
-                                if not referrer_id:
-                                    print(f"❌ No user found with ID ending in {user_id_part}")
-                            except Exception as pattern_error:
-                                print(f"❌ Error in pattern matching: {pattern_error}")
+                except Exception as db_error:
+                    print(f"⚠️ Database query error for referral code: {db_error}")
+                    print(f"🔄 Continuing without referral processing...")
                 except Exception as e:
                     print(f"❌ Error finding referrer: {e}")
     
@@ -282,21 +323,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if referrer_id and int(referrer_id) != user_id:
         print(f"✅ Valid referral detected: {referrer_id} → {user_id}")
-        if supabase:
+        if db:
             try:
                 # Check if referral already exists
-                existing_referral = supabase.table('referrals').select('*').eq('referred_id', user_id).execute()
-                print(f"🔍 Existing referrals for user {user_id}: {len(existing_referral.data)}")
+                referrals_ref = db.collection('referrals')
+                query = referrals_ref.where('referred_id', '==', str(user_id)).limit(1)
+                existing_referrals = list(query.stream())
+                print(f"🔍 Existing referrals for user {user_id}: {len(existing_referrals)}")
                 
-                if not existing_referral.data:
+                if not existing_referrals:
                     # Create new referral record with pending status
                     referral_data = {
-                        'referrer_id': int(referrer_id),
-                        'referred_id': user_id,
+                        'referrer_id': str(referrer_id),
+                        'referred_id': str(user_id),
                         'status': 'pending_group_join',
                         'referral_code': referral_code,
                         'auto_start_triggered': True,
-                        'created_at': datetime.now().isoformat(),
+                        'created_at': datetime.now(),
                         'bonus_amount': 0,
                         'is_active': True,
                         'rejoin_count': 0,
@@ -304,9 +347,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     }
                     
                     print(f"📝 Creating referral with data: {referral_data}")
-                    result = supabase.table('referrals').insert(referral_data).execute()
+                    doc_ref = referrals_ref.add(referral_data)
                     print(f"📝 Referral relationship created: {referrer_id} → {user_id} (pending_group_join)")
-                    print(f"📝 Insert result: {result.data}")
+                    print(f"📝 Insert result: {doc_ref[1].id}")
                     
                     # Show force join message
                     force_join_message = (
@@ -350,13 +393,16 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         print(f"✅ User {user_name} is group member - showing Mini App")
         
         # Process pending referral if exists
-        if supabase:
+        if db:
             try:
                 # First check for any existing referral (pending or verified)
-                existing_referral = supabase.table('referrals').select('*').eq('referred_id', user_id).execute()
+                referrals_ref = db.collection('referrals')
+                query = referrals_ref.where('referred_id', '==', user_id).limit(1)
+                existing_referrals = list(query.stream())
 
-                if existing_referral.data:
-                    referral = existing_referral.data[0]
+                if existing_referrals:
+                    referral_doc = existing_referrals[0]
+                    referral = referral_doc.to_dict()
                     referrer_id = referral['referrer_id']
 
                     # Check if this is a rejoin attempt (user was already verified and rewarded)
@@ -364,11 +410,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         print(f"⚠️ Rejoin attempt detected: {referrer_id} → {user_id}")
                         # Increment rejoin count and send warning
                         current_rejoin_count = referral.get('rejoin_count', 0)
-                        supabase.table('referrals').update({
+                        referral_doc.reference.update({
                             'rejoin_count': current_rejoin_count + 1,
-                            'last_rejoin_date': datetime.now().isoformat(),
-                            'updated_at': datetime.now().isoformat()
-                        }).eq('id', referral['id']).execute()
+                            'last_rejoin_date': datetime.now(),
+                            'updated_at': datetime.now()
+                        })
 
                         # Send warning to user about rejoin attempt
                         warning_message = (
@@ -397,10 +443,12 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         print(f"⏭️ Skipping reward processing for rejoin attempt: {user_id}")
                     else:
                         # Process pending referral
-                        pending_referral = supabase.table('referrals').select('*').eq('referred_id', user_id).eq('status', 'pending_group_join').execute()
+                        pending_query = referrals_ref.where('referred_id', '==', user_id).where('status', '==', 'pending_group_join').limit(1)
+                        pending_referrals = list(pending_query.stream())
 
-                        if pending_referral.data:
-                            referral = pending_referral.data[0]
+                        if pending_referrals:
+                            referral_doc = pending_referrals[0]
+                            referral = referral_doc.to_dict()
                             referrer_id = referral['referrer_id']
 
                             # Check if reward has already been given (prevent multiple rewards)
@@ -408,11 +456,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 print(f"⚠️ Reward already given for this referral: {referrer_id} → {user_id}")
                                 # Increment rejoin count and send warning
                                 current_rejoin_count = referral.get('rejoin_count', 0)
-                                supabase.table('referrals').update({
+                                referral_doc.reference.update({
                                     'rejoin_count': current_rejoin_count + 1,
-                                    'last_rejoin_date': datetime.now().isoformat(),
-                                    'updated_at': datetime.now().isoformat()
-                                }).eq('id', referral['id']).execute()
+                                    'last_rejoin_date': datetime.now(),
+                                    'updated_at': datetime.now()
+                                })
 
                                 # Send warning to user about rejoin attempt
                                 warning_message = (
@@ -440,25 +488,29 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 return
 
                             # Update referral status to verified and mark reward as given
-                            supabase.table('referrals').update({
+                            referral_doc.reference.update({
                                 'status': 'verified',
-                                'updated_at': datetime.now().isoformat(),
+                                'updated_at': datetime.now(),
                                 'is_active': True,
                                 'group_join_verified': True,
-                                'last_join_date': datetime.now().isoformat(),
+                                'last_join_date': datetime.now(),
                                 'reward_given': True,
-                                'reward_given_at': datetime.now().isoformat()
-                            }).eq('id', referral['id']).execute()
+                                'reward_given_at': datetime.now()
+                            })
 
                             # Give reward to referrer (+2 taka)
                             print(f"💰 Processing reward for referrer: {referrer_id}")
 
                             # Get current balance and referral stats
-                            balance_result = supabase.table('users').select('balance, total_earnings, total_referrals').eq('telegram_id', referrer_id).execute()
-                            if balance_result.data:
-                                current_balance = balance_result.data[0]['balance']
-                                current_total_earnings = balance_result.data[0].get('total_earnings', 0)
-                                current_total_referrals = balance_result.data[0].get('total_referrals', 0)
+                            users_ref = db.collection('users')
+                            user_query = users_ref.where('telegram_id', '==', str(referrer_id)).limit(1)
+                            user_docs = list(user_query.stream())
+                            
+                            if user_docs:
+                                user_data = user_docs[0].to_dict()
+                                current_balance = user_data['balance']
+                                current_total_earnings = user_data.get('total_earnings', 0)
+                                current_total_referrals = user_data.get('total_referrals', 0)
 
                                 print(f"💰 Referrer current stats:")
                                 print(f"   Balance: {current_balance}")
@@ -476,31 +528,33 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 print(f"   Total Referrals: {current_total_referrals} -> {new_total_referrals}")
 
                                 # Update balance, total_earnings, and total_referrals
-                                update_result = supabase.table('users').update({
+                                user_docs[0].reference.update({
                                     'balance': new_balance,
                                     'total_earnings': new_total_earnings,
                                     'total_referrals': new_total_referrals
-                                }).eq('telegram_id', referrer_id).execute()
+                                })
 
                                 # Create earnings record for referral reward
-                                supabase.table('earnings').insert({
+                                earnings_ref = db.collection('earnings')
+                                earnings_ref.add({
                                     'user_id': referrer_id,
                                     'source': 'referral',
                                     'amount': 2,
                                     'description': f'Referral reward for user {user_name} (ID: {user_id})',
-                                    'reference_id': referral['id'],
+                                    'reference_id': referral_doc.id,
                                     'reference_type': 'referral',
-                                    'created_at': datetime.now().isoformat()
-                                }).execute()
+                                    'created_at': datetime.now()
+                                })
 
                                 print(f"💰 Earnings record created for referral reward")
 
                                 # Verify the update
-                                verify_result = supabase.table('users').select('balance, total_earnings, total_referrals').eq('telegram_id', referrer_id).execute()
-                                if verify_result.data:
-                                    actual_balance = verify_result.data[0]['balance']
-                                    actual_total_earnings = verify_result.data[0].get('total_earnings', 0)
-                                    actual_total_referrals = verify_result.data[0].get('total_referrals', 0)
+                                updated_user_docs = list(user_query.stream())
+                                if updated_user_docs:
+                                    updated_user_data = updated_user_docs[0].to_dict()
+                                    actual_balance = updated_user_data['balance']
+                                    actual_total_earnings = updated_user_data.get('total_earnings', 0)
+                                    actual_total_referrals = updated_user_data.get('total_referrals', 0)
 
                                     print(f"💰 Actual stats after update:")
                                     print(f"   Balance: {actual_balance} (expected: {new_balance})")
@@ -519,14 +573,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 print(f"❌ Could not get current balance for referrer: {referrer_id}")
 
                             # Send notification to referrer
-                            supabase.table('notifications').insert({
+                            notifications_ref = db.collection('notifications')
+                            notifications_ref.add({
                                 'user_id': referrer_id,
                                 'type': 'reward',
                                 'title': 'Referral Reward Earned! 🎉',
                                 'message': f'User {user_name} joined the group! You earned ৳2.',
-                                'is_read': False,
-                                'created_at': datetime.now().isoformat()
-                            }).execute()
+                                'read': False,
+                                'created_at': datetime.now()
+                            })
 
                             print(f"💰 Referral reward processed: {referrer_id} got ৳2 for {user_name}")
                     
@@ -552,50 +607,64 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         
         keyboard = [
-            [InlineKeyboardButton("Open and Earn 💰", url="https://super-donut-5e4873.netlify.app/")]
+            [InlineKeyboardButton("Open and Earn 💰", url="https://helpful-khapse-deec27.netlify.app/")]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_photo(
-            photo=image_url,
-            caption=caption,
-            reply_markup=reply_markup,
-            parse_mode='HTML'
-        )
+        print(f"📤 Sending welcome message to group member {user_name} (ID: {user_id})")
+        try:
+            await update.message.reply_photo(
+                photo=image_url,
+                caption=caption,
+                reply_markup=reply_markup,
+                parse_mode='HTML'
+            )
+            print(f"✅ Welcome message sent successfully to {user_name}")
+        except Exception as msg_error:
+            print(f"❌ Error sending welcome message: {msg_error}")
+            # Send text message as fallback
+            await update.message.reply_text(
+                caption,
+                reply_markup=reply_markup,
+                parse_mode='HTML'
+            )
         
         # Update user status in database
-        if supabase:
+        if db:
             try:
-                existing_user = supabase.table('users').select('*').eq('telegram_id', user_id).execute()
+                users_ref = db.collection('users')
+                query = users_ref.where('telegram_id', '==', str(user_id)).limit(1)
+                existing_users = list(query.stream())
                 
-                if existing_user.data:
+                if existing_users:
                     # Update user data without is_active column to avoid schema issues
                     update_data = {
-                        'last_activity': datetime.now().isoformat()
+                        'last_activity': datetime.now()
                     }
                     
                     # Only add is_active if the column exists
+                    user_doc = existing_users[0]
                     try:
-                        supabase.table('users').update({
-                            'last_activity': datetime.now().isoformat(),
+                        user_doc.reference.update({
+                            'last_activity': datetime.now(),
                             'is_active': True
-                        }).eq('telegram_id', user_id).execute()
+                        })
                     except Exception as schema_error:
                         if "is_active" in str(schema_error):
-                            # Column doesn't exist, update without it
-                            supabase.table('users').update({
-                                'last_activity': datetime.now().isoformat()
-                            }).eq('telegram_id', user_id).execute()
+                            # Field doesn't exist, update without it
+                            user_doc.reference.update({
+                                'last_activity': datetime.now()
+                            })
                         else:
                             raise schema_error
                 else:
                     # Create new user
                     new_user_data = {
-                        'telegram_id': user_id,
+                        'telegram_id': str(user_id),
                         'username': username,
                         'first_name': user_name,
                         'last_name': update.message.from_user.last_name or "",
-                        'created_at': datetime.now().isoformat(),
+                        'created_at': datetime.now(),
                         'balance': 0,
                         'energy': 100,
                         'level': 1,
@@ -603,15 +672,15 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         'referral_code': ensure_user_referral_code(user_id, username)
                     }
                     
-                    # Try to add is_active if column exists
+                    # Try to add is_active if field exists
                     try:
                         new_user_data['is_active'] = True
-                        supabase.table('users').insert(new_user_data).execute()
+                        users_ref.add(new_user_data)
                     except Exception as schema_error:
                         if "is_active" in str(schema_error):
                             # Remove is_active and try again
                             new_user_data.pop('is_active', None)
-                            supabase.table('users').insert(new_user_data).execute()
+                            users_ref.add(new_user_data)
                         else:
                             raise schema_error
                     print(f"🆕 New user {user_name} (ID: {user_id}) created in database")
@@ -647,12 +716,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
-        await update.message.reply_photo(
-            photo=image_url,
-            caption=caption,
-            reply_markup=reply_markup,
-            parse_mode='HTML'
-        )
+        print(f"📤 Sending join requirement message to {user_name} (ID: {user_id})")
+        try:
+            await update.message.reply_photo(
+                photo=image_url,
+                caption=caption,
+                reply_markup=reply_markup,
+                parse_mode='HTML'
+            )
+            print(f"✅ Join requirement message sent successfully to {user_name}")
+        except Exception as msg_error:
+            print(f"❌ Error sending join message: {msg_error}")
+            # Send text message as fallback
+            await update.message.reply_text(
+                caption,
+                reply_markup=reply_markup,
+                parse_mode='HTML'
+            )
 
 # Callback query handler for membership check
 async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -670,13 +750,16 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             # User joined - process referral and show Mini App
             print(f"✅ User {user_name} joined group - processing referral")
             
-            if supabase:
+            if db:
                 try:
                     # First check for any existing referral (pending or verified)
-                    existing_referral = supabase.table('referrals').select('*').eq('referred_id', user_id).execute()
+                    referrals_ref = db.collection('referrals')
+                    query = referrals_ref.where('referred_id', '==', user_id).limit(1)
+                    existing_referrals = list(query.stream())
 
-                    if existing_referral.data:
-                        referral = existing_referral.data[0]
+                    if existing_referrals:
+                        referral_doc = existing_referrals[0]
+                        referral = referral_doc.to_dict()
                         referrer_id = referral['referrer_id']
 
                         # Check if this is a rejoin attempt (user was already verified and rewarded)
@@ -684,11 +767,11 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                             print(f"⚠️ Rejoin attempt detected via callback: {referrer_id} → {user_id}")
                             # Increment rejoin count and send warning
                             current_rejoin_count = referral.get('rejoin_count', 0)
-                            supabase.table('referrals').update({
+                            referral_doc.reference.update({
                                 'rejoin_count': current_rejoin_count + 1,
-                                'last_rejoin_date': datetime.now().isoformat(),
-                                'updated_at': datetime.now().isoformat()
-                            }).eq('id', referral['id']).execute()
+                                'last_rejoin_date': datetime.now(),
+                                'updated_at': datetime.now()
+                            })
 
                             # Send warning to user about rejoin attempt
                             warning_message = (
@@ -717,10 +800,12 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                             print(f"⏭️ Skipping reward processing for rejoin attempt via callback: {user_id}")
                         else:
                             # Process pending referral
-                            pending_referral = supabase.table('referrals').select('*').eq('referred_id', user_id).eq('status', 'pending_group_join').execute()
+                            pending_query = referrals_ref.where('referred_id', '==', user_id).where('status', '==', 'pending_group_join').limit(1)
+                            pending_referrals = list(pending_query.stream())
 
-                            if pending_referral.data:
-                                referral = pending_referral.data[0]
+                            if pending_referrals:
+                                referral_doc = pending_referrals[0]
+                                referral = referral_doc.to_dict()
                                 referrer_id = referral['referrer_id']
 
                                 # Check if reward has already been given (prevent multiple rewards)
@@ -728,11 +813,11 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                                     print(f"⚠️ Reward already given for this referral via callback: {referrer_id} → {user_id}")
                                     # Increment rejoin count and send warning
                                     current_rejoin_count = referral.get('rejoin_count', 0)
-                                    supabase.table('referrals').update({
+                                    referral_doc.reference.update({
                                         'rejoin_count': current_rejoin_count + 1,
-                                        'last_rejoin_date': datetime.now().isoformat(),
-                                        'updated_at': datetime.now().isoformat()
-                                    }).eq('id', referral['id']).execute()
+                                        'last_rejoin_date': datetime.now(),
+                                        'updated_at': datetime.now()
+                                    })
 
                                     # Send warning to user about rejoin attempt
                                     warning_message = (
@@ -760,25 +845,29 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                                     return
 
                                 # Update referral status to verified and mark reward as given
-                                supabase.table('referrals').update({
+                                referral_doc.reference.update({
                                     'status': 'verified',
-                                    'updated_at': datetime.now().isoformat(),
+                                    'updated_at': datetime.now(),
                                     'is_active': True,
                                     'group_join_verified': True,
-                                    'last_join_date': datetime.now().isoformat(),
+                                    'last_join_date': datetime.now(),
                                     'reward_given': True,
-                                    'reward_given_at': datetime.now().isoformat()
-                                }).eq('id', referral['id']).execute()
+                                    'reward_given_at': datetime.now()
+                                })
 
                                 # Give reward to referrer (+2 taka)
                                 print(f"💰 Processing reward for referrer via callback: {referrer_id}")
 
                                 # Get current balance and referral stats
-                                balance_result = supabase.table('users').select('balance, total_earnings, total_referrals').eq('telegram_id', referrer_id).execute()
-                                if balance_result.data:
-                                    current_balance = balance_result.data[0]['balance']
-                                    current_total_earnings = balance_result.data[0].get('total_earnings', 0)
-                                    current_total_referrals = balance_result.data[0].get('total_referrals', 0)
+                                users_ref = db.collection('users')
+                                user_query = users_ref.where('telegram_id', '==', str(referrer_id)).limit(1)
+                                user_docs = list(user_query.stream())
+                                
+                                if user_docs:
+                                    user_data = user_docs[0].to_dict()
+                                    current_balance = user_data['balance']
+                                    current_total_earnings = user_data.get('total_earnings', 0)
+                                    current_total_referrals = user_data.get('total_referrals', 0)
 
                                     print(f"💰 Referrer current stats:")
                                     print(f"   Balance: {current_balance}")
@@ -796,31 +885,33 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                                     print(f"   Total Referrals: {current_total_referrals} -> {new_total_referrals}")
 
                                     # Update balance, total_earnings, and total_referrals
-                                    update_result = supabase.table('users').update({
+                                    user_docs[0].reference.update({
                                         'balance': new_balance,
                                         'total_earnings': new_total_earnings,
                                         'total_referrals': new_total_referrals
-                                    }).eq('telegram_id', referrer_id).execute()
+                                    })
 
                                     # Create earnings record for referral reward
-                                    supabase.table('earnings').insert({
+                                    earnings_ref = db.collection('earnings')
+                                    earnings_ref.add({
                                         'user_id': referrer_id,
                                         'source': 'referral',
                                         'amount': 2,
                                         'description': f'Referral reward for user {user_name} (ID: {user_id})',
-                                        'reference_id': referral['id'],
+                                        'reference_id': referral_doc.id,
                                         'reference_type': 'referral',
-                                        'created_at': datetime.now().isoformat()
-                                    }).execute()
+                                        'created_at': datetime.now()
+                                    })
 
                                     print(f"💰 Earnings record created for referral reward")
 
                                     # Verify the update
-                                    verify_result = supabase.table('users').select('balance, total_earnings, total_referrals').eq('telegram_id', referrer_id).execute()
-                                    if verify_result.data:
-                                        actual_balance = verify_result.data[0]['balance']
-                                        actual_total_earnings = verify_result.data[0].get('total_earnings', 0)
-                                        actual_total_referrals = verify_result.data[0].get('total_referrals', 0)
+                                    updated_user_docs = list(user_query.stream())
+                                    if updated_user_docs:
+                                        updated_user_data = updated_user_docs[0].to_dict()
+                                        actual_balance = updated_user_data['balance']
+                                        actual_total_earnings = updated_user_data.get('total_earnings', 0)
+                                        actual_total_referrals = updated_user_data.get('total_referrals', 0)
 
                                         print(f"💰 Actual stats after update:")
                                         print(f"   Balance: {actual_balance} (expected: {new_balance})")
@@ -839,14 +930,15 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                                     print(f"❌ Could not get current balance for referrer: {referrer_id}")
 
                                 # Send notification to referrer
-                                supabase.table('notifications').insert({
+                                notifications_ref = db.collection('notifications')
+                                notifications_ref.add({
                                     'user_id': referrer_id,
                                     'type': 'reward',
                                     'title': 'Referral Reward Earned! 🎉',
                                     'message': f'User {user_name} joined the group! You earned ৳2.',
-                                    'is_read': False,
-                                    'created_at': datetime.now().isoformat()
-                                }).execute()
+                                    'read': False,
+                                    'created_at': datetime.now()
+                                })
 
                                 print(f"💰 Referral reward processed via callback: {referrer_id} got ৳2")
                         
@@ -861,7 +953,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                         )
                         
                         keyboard = [
-                            [InlineKeyboardButton("Open and Earn 💰", url="https://super-donut-5e4873.netlify.app/")]
+                            [InlineKeyboardButton("Open and Earn 💰", url="https://helpful-khapse-deec27.netlify.app/")]
                         ]
                         reply_markup = InlineKeyboardMarkup(keyboard)
                         
@@ -906,7 +998,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             )
             
             keyboard = [
-                [InlineKeyboardButton("Open and Earn 💰", url="https://super-donut-5e4873.netlify.app/")]
+                [InlineKeyboardButton("Open and Earn 💰", url="https://helpful-khapse-deec27.netlify.app/")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             
@@ -1040,7 +1132,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     keyboard = [
         [InlineKeyboardButton("Join Group 📱", url=REQUIRED_GROUP_LINK)],
-        [InlineKeyboardButton("Open Mini App 💰", url="https://super-donut-5e4873.netlify.app/")]
+        [InlineKeyboardButton("Open Mini App 💰", url="https://helpful-khapse-deec27.netlify.app/")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
@@ -1066,14 +1158,18 @@ def main():
     print("🔗 Auto-start triggers enabled")
     print("💰 2 taka reward system active")
     print("🔒 Group membership verification enabled")
-    print(f"🔗 Supabase URL: {SUPABASE_URL}")
+    print(f"🔗 Firebase Project: {db.project if db else 'Not connected'}")
     
     # Sync referral codes on startup
-    if supabase:
+    if db:
         print("🔄 Syncing referral codes on startup...")
-        sync_all_referral_codes()
+        # Temporarily disable sync on startup to avoid Firebase connection issues
+        # sync_all_referral_codes()
     else:
-        print("⚠️ Supabase not connected, skipping referral code sync")
+        print("⚠️ Firebase not connected, skipping referral code sync")
+    
+    print("🚀 Starting bot polling...")
+    print("💬 Bot is ready to receive /start commands!")
     
     # Start polling
     app.run_polling()

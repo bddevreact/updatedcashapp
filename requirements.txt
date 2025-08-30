@@ -1,11 +1,2 @@
-python-telegram-bot==20.7
-firebase-admin==6.4.0
-python-dotenv==1.0.0
-asyncio
-logging
-typing
-datetime
-hashlib
-time
-collections
-dataclasses
+# This is a React frontend app - no Python dependencies needed for Netlify
+# Python dependencies are only needed for the bot (bot.py) which runs separately
