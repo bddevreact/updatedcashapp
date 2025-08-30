@@ -22,10 +22,10 @@ export const db = getFirestore(app);
 // Initialize Auth
 export const auth = getAuth(app);
 
-// Initialize Analytics
-export const analytics = getAnalytics(app);
+// Initialize Analytics (only works in browser environment)
+export const analytics = typeof window !== "undefined" ? getAnalytics(app) : null;
 
-// Admin credentials (for reference)
+// Admin credentials (for reference, ⚠️ better to keep in .env file)
 export const ADMIN_CREDENTIALS = {
   email: 'cashpoints@gmail.com',
   password: 'admin123'
