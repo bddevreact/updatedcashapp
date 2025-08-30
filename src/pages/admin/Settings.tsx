@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Settings, DollarSign, Gift, Target, Save, Plus, Edit, Trash2, X, Users, Activity, TrendingUp } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { db } from '../../lib/firebase';
+import { collection, query, orderBy, limit, getDocs, where, doc, updateDoc, deleteDoc, serverTimestamp, addDoc } from 'firebase/firestore';
 import { motion } from 'framer-motion';
 
 interface PaymentConfig {

@@ -2,8 +2,9 @@ import React, { useState, useRef, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Trophy, Crown, Medal, Award, TrendingUp, Users, DollarSign, Calendar, Target, Star, Zap, Flame, RefreshCw } from 'lucide-react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { supabase } from '../lib/supabase';
-import { useUserStore } from '../store/userStore';
+import { db } from '../lib/firebase';
+import { collection, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
+import { useFirebaseUserStore } from '../store/firebaseUserStore';
 
 interface LeaderboardUser {
   id: string;
@@ -34,7 +35,7 @@ export default function Leaderboard() {
   const [showScrollTop, setShowScrollTop] = useState(false);
   const navigate = useNavigate();
   const leaderboardContentRef = useRef<HTMLDivElement>(null);
-  const { telegramId } = useUserStore();
+  const { telegramId } = useFirebaseUserStore();
 
   // Scroll to top of leaderboard content when page changes
   useEffect(() => {
@@ -94,25 +95,36 @@ export default function Leaderboard() {
   const loadLeaderboardData = async () => {
     try {
       // Load top referrers
-      const { data: referrers, error: referrersError } = await supabase
-        .from('referrals')
-        .select(`
-          referrer_id,
-          users!referrals_referrer_id_fkey (
-            id,
-            first_name,
-            last_name,
-            username,
-            photo_url
-          )
-        `)
-        .eq('status', 'verified')
-        .order('created_at', { ascending: false });
+      const referrersQuery = query(
+        collection(db, 'referrals'),
+        where('status', '==', 'verified'),
+        orderBy('created_at', 'desc')
+      );
+      const referrersSnapshot = await getDocs(referrersQuery);
+      const referrers = referrersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      if (referrersError) throw referrersError;
+      // Load user data for each referrer
+      const referrersWithUsers = await Promise.all(
+        referrers.map(async (ref: any) => {
+          if (ref.referrer_id) {
+            const userQuery = query(
+              collection(db, 'users'),
+              where('telegram_id', '==', ref.referrer_id)
+            );
+            const userSnapshot = await getDocs(userQuery);
+            const userData = userSnapshot.docs[0]?.data();
+            
+            return {
+              ...ref,
+              users: userData
+            };
+          }
+          return ref;
+        })
+      );
 
       // Group and count referrals by referrer
-      const referralCounts = referrers?.reduce((acc: any, ref: any) => {
+      const referralCounts = referrersWithUsers?.reduce((acc: any, ref: any) => {
         const referrerId = ref.referrer_id;
         const userData = ref.users;
         
@@ -424,20 +436,18 @@ export default function Leaderboard() {
   const loadLeaderboardStats = async () => {
     try {
       // Load total users count
-      const { count: totalUsersCount, error: usersError } = await supabase
-        .from('users')
-        .select('*', { count: 'exact', head: true });
-
-      if (usersError) throw usersError;
+      const totalUsersQuery = query(collection(db, 'users'));
+      const totalUsersSnapshot = await getDocs(totalUsersQuery);
+      const totalUsersCount = totalUsersSnapshot.size;
 
       // Load active users (users active in last 24 hours)
       const yesterday = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const { count: activeUsersCount, error: activeError } = await supabase
-        .from('users')
-        .select('*', { count: 'exact', head: true })
-        .gte('last_active', yesterday.toISOString());
-
-      if (activeError) throw activeError;
+      const activeUsersQuery = query(
+        collection(db, 'users'),
+        where('last_active', '>=', yesterday.toISOString())
+      );
+      const activeUsersSnapshot = await getDocs(activeUsersQuery);
+      const activeUsersCount = activeUsersSnapshot.size;
 
       setTotalUsers(totalUsersCount || 0);
       setActiveUsers(activeUsersCount || 0);
@@ -472,27 +482,37 @@ export default function Leaderboard() {
       }
 
       // Load referrals within time period
-      const { data: referrals, error: referralsError } = await supabase
-        .from('referrals')
-        .select(`
-          referrer_id,
-          created_at,
-          users!referrals_referrer_id_fkey (
-            id,
-            first_name,
-            last_name,
-            username,
-            photo_url
-          )
-        `)
-        .eq('status', 'verified')
-        .gte('created_at', startDate.toISOString())
-        .order('created_at', { ascending: false });
+      const referralsQuery = query(
+        collection(db, 'referrals'),
+        where('status', '==', 'verified'),
+        where('created_at', '>=', startDate.toISOString()),
+        orderBy('created_at', 'desc')
+      );
+      const referralsSnapshot = await getDocs(referralsQuery);
+      const referrals = referralsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      if (referralsError) throw referralsError;
+      // Load user data for each referrer
+      const referralsWithUsers = await Promise.all(
+        referrals.map(async (ref: any) => {
+          if (ref.referrer_id) {
+            const userQuery = query(
+              collection(db, 'users'),
+              where('telegram_id', '==', ref.referrer_id)
+            );
+            const userSnapshot = await getDocs(userQuery);
+            const userData = userSnapshot.docs[0]?.data();
+            
+            return {
+              ...ref,
+              users: userData
+            };
+          }
+          return ref;
+        })
+      );
 
       // Group and count referrals by referrer for the time period
-      const referralCounts = referrals?.reduce((acc: any, ref: any) => {
+      const referralCounts = referralsWithUsers?.reduce((acc: any, ref: any) => {
         const referrerId = ref.referrer_id;
         const userData = ref.users;
         
@@ -550,13 +570,13 @@ export default function Leaderboard() {
   const loadTopEarners = async () => {
     try {
       // Load users ordered by balance
-      const { data: users, error: usersError } = await supabase
-        .from('users')
-        .select('*')
-        .order('balance', { ascending: false })
-        .limit(25);
-
-      if (usersError) throw usersError;
+      const usersQuery = query(
+        collection(db, 'users'),
+        orderBy('balance', 'desc'),
+        limit(25)
+      );
+      const usersSnapshot = await getDocs(usersQuery);
+      const users = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       // Transform to leaderboard format
       const topEarners = users?.map((user, index) => ({

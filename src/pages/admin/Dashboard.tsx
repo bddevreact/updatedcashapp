@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, TrendingUp, Gift, Settings, LogOut, DollarSign, Target, Zap, Activity, Clock, AlertCircle, CheckCircle, XCircle } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { db } from '../../lib/firebase';
+import { collection, query, orderBy, limit, getDocs, where, doc, updateDoc, serverTimestamp, getDoc } from 'firebase/firestore';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 
@@ -15,6 +16,26 @@ interface Stats {
   pendingWithdrawals: number;
   tradingReferrals: number;
   pendingTradingReferrals: number;
+}
+
+interface FirebaseUser {
+  id: string;
+  last_active?: string;
+  balance?: number;
+  [key: string]: any;
+}
+
+interface FirebaseTask {
+  id: string;
+  reward_amount?: number;
+  verified?: boolean;
+  [key: string]: any;
+}
+
+interface FirebaseWithdrawal {
+  id: string;
+  status?: string;
+  [key: string]: any;
 }
 
 export default function AdminDashboard() {
@@ -43,43 +64,28 @@ export default function AdminDashboard() {
   const loadStats = async () => {
     try {
       // Load users
-      const { data: users, error: usersError } = await supabase
-        .from('users')
-        .select('*');
-
-      if (usersError) throw usersError;
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const users = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as FirebaseUser[];
 
       // Load referrals
-      const { data: referrals, error: referralsError } = await supabase
-        .from('referrals')
-        .select('*');
-
-      if (referralsError) throw referralsError;
+      const referralsSnapshot = await getDocs(collection(db, 'referrals'));
+      const referrals = referralsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       // Load withdrawal requests
-      const { data: withdrawals, error: withdrawalsError } = await supabase
-        .from('withdrawal_requests')
-        .select('*');
-
-      if (withdrawalsError) throw withdrawalsError;
+      const withdrawalsSnapshot = await getDocs(collection(db, 'withdrawal_requests'));
+      const withdrawals = withdrawalsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as FirebaseWithdrawal[];
 
       // Load trading platform referrals
-      const { data: tradingReferrals, error: tradingError } = await supabase
-        .from('trading_platform_referrals')
-        .select('*');
-
-      if (tradingError) throw tradingError;
+      const tradingReferralsSnapshot = await getDocs(collection(db, 'trading_platform_referrals'));
+      const tradingReferrals = tradingReferralsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as FirebaseWithdrawal[];
 
       // Load task completions for payment calculations
-      const { data: taskCompletions, error: tasksError } = await supabase
-        .from('task_completions')
-        .select('*');
-
-      if (tasksError) throw tasksError;
+      const taskCompletionsSnapshot = await getDocs(collection(db, 'task_completions'));
+      const taskCompletions = taskCompletionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as FirebaseTask[];
 
       setStats({
         totalUsers: users.length,
-        activeUsers: users.filter(u => u.last_active > new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()).length,
+        activeUsers: users.filter(u => u.last_active && u.last_active > new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString()).length,
         totalBalance: users.reduce((sum, user) => sum + (user.balance || 0), 0),
         totalReferrals: referrals.length,
         totalPayments: taskCompletions.reduce((sum, task) => sum + (task.reward_amount || 0), 0),
@@ -96,16 +102,35 @@ export default function AdminDashboard() {
 
   const loadRecentWithdrawals = async () => {
     try {
-      const { data, error } = await supabase
-        .from('withdrawal_requests')
-        .select(`
-          *,
-          user:users!withdrawal_requests_user_id_fkey(first_name, username)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (!error) setRecentWithdrawals(data || []);
+      const withdrawalsQuery = query(
+        collection(db, 'withdrawal_requests'),
+        orderBy('created_at', 'desc'),
+        limit(5)
+      );
+      const withdrawalsSnapshot = await getDocs(withdrawalsQuery);
+      const withdrawals = withdrawalsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Load user data for each withdrawal
+      const withdrawalsWithUsers = await Promise.all(
+        withdrawals.map(async (withdrawal: any) => {
+          if (withdrawal.user_id) {
+            const userDoc = await getDoc(doc(db, 'users', withdrawal.user_id));
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              return {
+                ...withdrawal,
+                user: {
+                  first_name: userData.first_name,
+                  username: userData.username
+                }
+              };
+            }
+          }
+          return withdrawal;
+        })
+      );
+      
+      setRecentWithdrawals(withdrawalsWithUsers);
     } catch (error) {
       console.error('Error loading recent withdrawals:', error);
     }
@@ -113,23 +138,42 @@ export default function AdminDashboard() {
 
   const loadRecentTradingReferrals = async () => {
     try {
-      const { data, error } = await supabase
-        .from('trading_platform_referrals')
-        .select(`
-          *,
-          user:users!trading_platform_referrals_user_id_fkey(first_name, username)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (!error) setRecentTradingReferrals(data || []);
+      const tradingQuery = query(
+        collection(db, 'trading_platform_referrals'),
+        orderBy('created_at', 'desc'),
+        limit(5)
+      );
+      const tradingSnapshot = await getDocs(tradingQuery);
+      const tradingReferrals = tradingSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Load user data for each trading referral
+      const tradingWithUsers = await Promise.all(
+        tradingReferrals.map(async (referral: any) => {
+          if (referral.user_id) {
+            const userDoc = await getDoc(doc(db, 'users', referral.user_id));
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              return {
+                ...referral,
+                user: {
+                  first_name: userData.first_name,
+                  username: userData.username
+                }
+              };
+            }
+          }
+          return referral;
+        })
+      );
+      
+      setRecentTradingReferrals(tradingWithUsers);
     } catch (error) {
       console.error('Error loading recent trading referrals:', error);
     }
   };
 
   const handleLogout = async () => {
-    await supabase.auth.signOut();
+    // Firebase auth signOut will be handled by the auth hook
     navigate('/admin');
   };
 
@@ -376,16 +420,14 @@ export default function AdminDashboard() {
               onClick={async () => {
                 try {
                   console.log('Testing database connection...');
-                  const { data, error } = await supabase
-                    .from('task_templates')
-                    .select('count')
-                    .limit(1);
+                  const taskTemplatesSnapshot = await getDocs(collection(db, 'task_templates'));
+                  const data = taskTemplatesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                   
-                  if (error) {
-                    console.error('Database test failed:', error);
-                    alert('Database connection failed: ' + error.message);
-                  } else {
+                  if (data.length > 0) {
                     console.log('Database test successful:', data);
+                    alert('Database connection successful!');
+                  } else {
+                    console.log('Database test successful - no data found');
                     alert('Database connection successful!');
                   }
                 } catch (err) {
@@ -402,18 +444,11 @@ export default function AdminDashboard() {
               onClick={async () => {
                 try {
                   console.log('Testing task_templates table...');
-                  const { data, error } = await supabase
-                    .from('task_templates')
-                    .select('*')
-                    .limit(5);
+                  const taskTemplatesSnapshot = await getDocs(collection(db, 'task_templates'));
+                  const data = taskTemplatesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
                   
-                  if (error) {
-                    console.error('Task templates test failed:', error);
-                    alert('Task templates test failed: ' + error.message);
-                  } else {
-                    console.log('Task templates test successful:', data);
-                    alert(`Task templates test successful! Found ${data?.length || 0} templates.`);
-                  }
+                  console.log('Task templates test successful:', data);
+                  alert(`Task templates test successful! Found ${data?.length || 0} templates.`);
                 } catch (err) {
                   console.error('Task templates test error:', err);
                   alert('Task templates test error: ' + (err as Error).message);

@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Link, TrendingUp, UserPlus, Activity, Share2, Copy, CheckCircle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/firebase';
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 
 interface ReferralLinkTrackerProps {
   telegramId: string;
@@ -51,78 +52,69 @@ export default function ReferralLinkTracker({
 
     setIsLoading(true);
     try {
-      // Get referral joins based on selected period
-      let dateFilter = '';
-      switch (selectedPeriod) {
-        case 'today':
-          dateFilter = 'AND joined_at >= CURRENT_DATE';
-          break;
-        case 'week':
-          dateFilter = 'AND joined_at >= CURRENT_DATE - INTERVAL \'7 days\'';
-          break;
-        case 'month':
-          dateFilter = 'AND joined_at >= CURRENT_DATE - INTERVAL \'30 days\'';
-          break;
-        default:
-          dateFilter = '';
-      }
+      // Period filtering is now handled directly in the queries below
 
-      // Get total joins count
-      const { data: totalJoins, error: totalError } = await supabase
-        .rpc('get_referral_joins_count', {
-          p_referral_code: referralCode,
-          p_referrer_id: telegramId,
-          p_group_username: groupUsername,
-          p_date_filter: dateFilter
-        });
-
-      if (totalError) throw totalError;
+      // Get total joins count - simplified for Firebase
+      const totalJoinsQuery = query(
+        collection(db, 'referral_joins'),
+        where('referral_code', '==', referralCode),
+        where('referrer_id', '==', telegramId),
+        where('group_username', '==', groupUsername)
+      );
+      const totalJoinsSnapshot = await getDocs(totalJoinsQuery);
+      const totalJoins = totalJoinsSnapshot.size;
 
       // Get recent joins
-      const { data: recentJoins, error: recentError } = await supabase
-        .from('referral_joins')
-        .select(`
-          id,
-          user_id,
-          username,
-          first_name,
-          joined_at,
-          group_username,
-          referral_code,
-          status
-        `)
-        .eq('referral_code', referralCode)
-        .eq('referrer_id', telegramId)
-        .eq('group_username', groupUsername)
-        .order('joined_at', { ascending: false })
-        .limit(10);
+      const recentJoinsQuery = query(
+        collection(db, 'referral_joins'),
+        where('referral_code', '==', referralCode),
+        where('referrer_id', '==', telegramId),
+        where('group_username', '==', groupUsername),
+        orderBy('joined_at', 'desc'),
+        limit(10)
+      );
+      const recentJoinsSnapshot = await getDocs(recentJoinsQuery);
+      const recentJoins = recentJoinsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      if (recentError) throw recentError;
+      // Get period-specific counts - simplified for Firebase
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
 
-      // Get period-specific counts
-      const { data: todayJoins, error: todayError } = await supabase
-        .rpc('get_referral_joins_count', {
-          p_referral_code: referralCode,
-          p_referrer_id: telegramId,
-          p_group_username: groupUsername,
-          p_date_filter: 'AND joined_at >= CURRENT_DATE'
-        });
+      // Today joins
+      const todayJoinsQuery = query(
+        collection(db, 'referral_joins'),
+        where('referral_code', '==', referralCode),
+        where('referrer_id', '==', telegramId),
+        where('group_username', '==', groupUsername),
+        where('joined_at', '>=', today.toISOString())
+      );
+      const todayJoinsSnapshot = await getDocs(todayJoinsQuery);
+      const todayJoins = todayJoinsSnapshot.size;
 
-      const { data: weekJoins, error: weekError } = await supabase
-        .rpc('get_referral_joins_count', {
-          p_referral_code: referralCode,
-          p_referrer_id: telegramId,
-          p_group_username: groupUsername,
-          p_date_filter: 'AND joined_at >= CURRENT_DATE - INTERVAL \'7 days\''
-        });
+      // Week joins
+      const weekJoinsQuery = query(
+        collection(db, 'referral_joins'),
+        where('referral_code', '==', referralCode),
+        where('referrer_id', '==', telegramId),
+        where('group_username', '==', groupUsername),
+        where('joined_at', '>=', weekAgo.toISOString())
+      );
+      const weekJoinsSnapshot = await getDocs(weekJoinsQuery);
+      const weekJoins = weekJoinsSnapshot.size;
 
-      const { data: monthJoins, error: monthError } = await supabase
-        .rpc('get_referral_joins_count', {
-          p_referral_code: referralCode,
-          p_referrer_id: telegramId,
-          p_group_username: groupUsername,
-          p_date_filter: 'AND joined_at >= CURRENT_DATE - INTERVAL \'30 days\''
-        });
+      // Month joins
+      const monthJoinsQuery = query(
+        collection(db, 'referral_joins'),
+        where('referral_code', '==', referralCode),
+        where('referrer_id', '==', telegramId),
+        where('group_username', '==', groupUsername),
+        where('joined_at', '>=', monthAgo.toISOString())
+      );
+      const monthJoinsSnapshot = await getDocs(monthJoinsQuery);
+      const monthJoins = monthJoinsSnapshot.size;
 
       const stats: ReferralStats = {
         totalJoins: totalJoins || 0,

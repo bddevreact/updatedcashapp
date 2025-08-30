@@ -1,12 +1,13 @@
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, Search, CheckCircle, XCircle, Eye, Clock, AlertCircle, Plus, Edit, Trash2, Save, X, Copy, Link, DollarSign, Target } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { db } from '../../lib/firebase';
+import { collection, query, orderBy, limit, getDocs, where, doc, updateDoc, deleteDoc, serverTimestamp, addDoc, getDoc } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useUserStore } from '../../store/userStore';
+import { useFirebaseUserStore } from '../../store/firebaseUserStore';
 
 interface TradingReferral {
   id: string;
-  user_id: number;
+  user_id: string;
   platform_name: string;
   trading_uid: string;
   referral_link: string;
@@ -49,7 +50,7 @@ interface ReferralConfig {
 }
 
 export default function AdminTradingReferrals() {
-  const { addNotification } = useUserStore();
+  const { addNotification } = useFirebaseUserStore();
   const [tradingReferrals, setTradingReferrals] = useState<TradingReferral[]>([]);
   const [tradingPlatforms, setTradingPlatforms] = useState<TradingPlatform[]>([]);
   const [loading, setLoading] = useState(true);
@@ -117,26 +118,26 @@ export default function AdminTradingReferrals() {
     try {
       setLoading(true);
       
-      // First, load trading referrals
-      const { data: referralsData, error: referralsError } = await supabase
-        .from('trading_platform_referrals')
-        .select('*')
-        .order('created_at', { ascending: false });
+      // Load trading referrals from Firestore
+      const referralsSnapshot = await getDocs(collection(db, 'trading_platform_referrals'));
+      const referralsData = referralsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      if (referralsError) throw referralsError;
-
-      // Then, load user data for each referral
+      // Load user data for each referral
       const referralsWithUsers = await Promise.all(
-        (referralsData || []).map(async (referral) => {
+        referralsData.map(async (referral: any) => {
           try {
-            const { data: userData, error: userError } = await supabase
-              .from('users')
-              .select('first_name, username, balance')
-              .eq('telegram_id', referral.user_id)
-              .single();
-
-            if (userError) {
-              console.warn(`User not found for referral ${referral.id}:`, userError);
+            const userDoc = await getDoc(doc(db, 'users', referral.user_id));
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              return {
+                ...referral,
+                user: {
+                  first_name: userData.first_name || 'Unknown User',
+                  username: userData.username || 'unknown',
+                  balance: userData.balance || 0
+                }
+              };
+            } else {
               return {
                 ...referral,
                 user: {
@@ -146,11 +147,6 @@ export default function AdminTradingReferrals() {
                 }
               };
             }
-
-            return {
-              ...referral,
-              user: userData
-            };
           } catch (error) {
             console.warn(`Error loading user for referral ${referral.id}:`, error);
             return {
@@ -169,11 +165,11 @@ export default function AdminTradingReferrals() {
       
       // Calculate stats
       const total = referralsWithUsers.length;
-      const pending = referralsWithUsers.filter(r => r.status === 'pending').length;
-      const verified = referralsWithUsers.filter(r => r.status === 'verified').length;
-      const rejected = referralsWithUsers.filter(r => r.status === 'rejected').length;
-      const totalRewards = referralsWithUsers.reduce((sum, r) => sum + (r.reward_amount || 0), 0);
-      const pendingRewards = referralsWithUsers.filter(r => r.status === 'pending').reduce((sum, r) => sum + (r.reward_amount || 0), 0);
+      const pending = referralsWithUsers.filter((r: any) => r.status === 'pending').length;
+      const verified = referralsWithUsers.filter((r: any) => r.status === 'verified').length;
+      const rejected = referralsWithUsers.filter((r: any) => r.status === 'rejected').length;
+      const totalRewards = referralsWithUsers.reduce((sum: number, r: any) => sum + (r.reward_amount || 0), 0);
+      const pendingRewards = referralsWithUsers.filter((r: any) => r.status === 'pending').reduce((sum: number, r: any) => sum + (r.reward_amount || 0), 0);
       
       setStats({ total, pending, verified, rejected, totalRewards, pendingRewards });
     } catch (error) {
@@ -185,12 +181,9 @@ export default function AdminTradingReferrals() {
 
   const loadTradingPlatforms = async () => {
     try {
-      const { data, error } = await supabase
-        .from('trading_platforms')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!error) setTradingPlatforms(data || []);
+      const platformsSnapshot = await getDocs(collection(db, 'trading_platforms'));
+      const platformsData = platformsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as TradingPlatform[];
+      setTradingPlatforms(platformsData);
     } catch (error) {
       console.error('Error loading trading platforms:', error);
     }
@@ -224,29 +217,24 @@ export default function AdminTradingReferrals() {
         }
       }
 
-      const { error } = await supabase
-        .from('trading_platform_referrals')
-        .update({ 
-          status: newStatus, 
-          verification_date: new Date().toISOString() 
-        })
-        .eq('id', referralId);
-
-      if (error) throw error;
+      await updateDoc(doc(db, 'trading_platform_referrals', referralId), {
+        status: newStatus,
+        verification_date: serverTimestamp()
+      });
 
       // If verified, add reward to user balance
       if (newStatus === 'verified') {
-        const { error: balanceError } = await supabase
-          .from('users')
-          .update({ 
-            balance: (referral.user?.balance || 0) + referral.reward_amount 
-          })
-          .eq('id', referral.user_id);
-
-        if (balanceError) throw balanceError;
+        try {
+          await updateDoc(doc(db, 'users', referral.user_id), {
+            balance: (referral.user?.balance || 0) + referral.reward_amount
+          });
+        } catch (balanceError) {
+          console.error('Error updating user balance:', balanceError);
+          throw balanceError;
+        }
 
         // Log the successful verification
-        await logUserActivity(referral.user_id, 'trading_referral_verified', {
+        await logUserActivity(referral.user_id.toString(), 'trading_referral_verified', {
           platform: referral.platform_name,
           uid: referral.trading_uid,
           reward: referral.reward_amount
@@ -282,16 +270,14 @@ export default function AdminTradingReferrals() {
   };
 
   // User Activity Logging
-  const logUserActivity = async (userId: number, activityType: string, details: any) => {
+  const logUserActivity = async (userId: string, activityType: string, details: any) => {
     try {
-      await supabase
-        .from('user_activities')
-        .insert([{
-          user_id: userId,
-          activity_type: activityType,
-          details: details,
-          created_at: new Date().toISOString()
-        }]);
+      await addDoc(collection(db, 'user_activities'), {
+        user_id: userId,
+        activity_type: activityType,
+        details: details,
+        created_at: serverTimestamp()
+      });
     } catch (error) {
       console.error('Error logging user activity:', error);
     }
@@ -300,12 +286,9 @@ export default function AdminTradingReferrals() {
   // Enhanced Platform Management
   const handlePlatformRewardUpdate = async (platformId: string, newReward: number) => {
     try {
-      const { error } = await supabase
-        .from('trading_platforms')
-        .update({ reward_amount: newReward })
-        .eq('id', platformId);
-
-      if (error) throw error;
+      await updateDoc(doc(db, 'trading_platforms', platformId), {
+        reward_amount: newReward
+      });
 
       // Update local state
       setTradingPlatforms(tradingPlatforms.map(p => 
@@ -322,15 +305,13 @@ export default function AdminTradingReferrals() {
   const handleAddPlatform = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const { data, error } = await supabase
-        .from('trading_platforms')
-        .insert([platformForm])
-        .select()
-        .single();
+      const docRef = await addDoc(collection(db, 'trading_platforms'), {
+        ...platformForm,
+        created_at: serverTimestamp()
+      });
 
-      if (error) throw error;
-
-      setTradingPlatforms([data, ...tradingPlatforms]);
+      const newPlatform = { id: docRef.id, ...platformForm, created_at: new Date().toISOString() } as TradingPlatform;
+      setTradingPlatforms([newPlatform, ...tradingPlatforms]);
       setShowAddPlatform(false);
       resetPlatformForm();
     } catch (error) {
@@ -343,16 +324,13 @@ export default function AdminTradingReferrals() {
     if (!editingPlatform) return;
 
     try {
-      const { data, error } = await supabase
-        .from('trading_platforms')
-        .update(platformForm)
-        .eq('id', editingPlatform.id)
-        .select()
-        .single();
+      await updateDoc(doc(db, 'trading_platforms', editingPlatform.id), {
+        ...platformForm,
+        updated_at: serverTimestamp()
+      });
 
-      if (error) throw error;
-
-      setTradingPlatforms(tradingPlatforms.map(p => p.id === editingPlatform.id ? data : p));
+      const updatedPlatform = { ...editingPlatform, ...platformForm } as TradingPlatform;
+      setTradingPlatforms(tradingPlatforms.map(p => p.id === editingPlatform.id ? updatedPlatform : p));
       setEditingPlatform(null);
       resetPlatformForm();
     } catch (error) {
@@ -364,13 +342,7 @@ export default function AdminTradingReferrals() {
     if (!confirm('Are you sure you want to delete this trading platform?')) return;
 
     try {
-      const { error } = await supabase
-        .from('trading_platforms')
-        .delete()
-        .eq('id', platformId);
-
-      if (error) throw error;
-
+      await deleteDoc(doc(db, 'trading_platforms', platformId));
       setTradingPlatforms(tradingPlatforms.filter(p => p.id !== platformId));
     } catch (error) {
       console.error('Error deleting platform:', error);
@@ -441,21 +413,20 @@ export default function AdminTradingReferrals() {
   const loadReferralStats = async () => {
     try {
       // Get total referrals
-      const { data: totalReferrals, error: totalError } = await supabase
-        .from('referrals')
-        .select('*');
+      const referralsSnapshot = await getDocs(collection(db, 'referrals'));
+      const totalReferrals = referralsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      if (!totalError && totalReferrals) {
+      if (totalReferrals.length > 0) {
         const total = totalReferrals.length;
-        const totalRewards = totalReferrals.reduce((sum, ref) => sum + (ref.reward_amount || 0), 0);
+        const totalRewards = totalReferrals.reduce((sum: number, ref: any) => sum + (ref.reward_amount || 0), 0);
         
         // Get unique referrers
-        const uniqueReferrers = new Set(totalReferrals.map(ref => ref.referrer_id));
+        const uniqueReferrers = new Set(totalReferrals.map((ref: any) => ref.referrer_id));
         
         // Get today's referrals
         const today = new Date().toDateString();
-        const todayRefs = totalReferrals.filter(ref => 
-          new Date(ref.created_at).toDateString() === today
+        const todayRefs = totalReferrals.filter((ref: any) => 
+          ref.created_at && new Date(ref.created_at.toDate ? ref.created_at.toDate() : ref.created_at).toDateString() === today
         );
 
         setReferralStats({
@@ -473,14 +444,12 @@ export default function AdminTradingReferrals() {
   // Load individual referral configuration
   const loadIndividualReferralConfig = async () => {
     try {
-      const { data, error } = await supabase
-        .from('global_config')
-        .select('*')
-        .eq('config_key', 'individual_referral_system')
-        .single();
-
-      if (!error && data) {
-        const config = JSON.parse(data.config_value || '{}');
+      const configQuery = query(collection(db, 'global_config'), where('config_key', '==', 'individual_referral_system'));
+      const configSnapshot = await getDocs(configQuery);
+      
+      if (!configSnapshot.empty) {
+        const configDoc = configSnapshot.docs[0];
+        const config = JSON.parse(configDoc.data().config_value || '{}');
         setIndividualReferralConfig({
           base_url: config.base_url || '',
           referral_reward: config.referral_reward || 2, // Updated to 2 taka as per new system
@@ -496,14 +465,9 @@ export default function AdminTradingReferrals() {
   // Load users for individual referral management
   const loadUsers = async () => {
     try {
-      const { data, error } = await supabase
-        .from('users')
-        .select('telegram_id, first_name, username, balance, created_at')
-        .order('created_at', { ascending: false });
-
-      if (!error) {
-        setUsers(data || []);
-      }
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const usersData = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setUsers(usersData);
     } catch (error) {
       console.error('Error loading users:', error);
     }
@@ -519,18 +483,26 @@ export default function AdminTradingReferrals() {
         tracking_params: individualReferralConfig.tracking_params
       };
 
-      // Use upsert to handle both insert and update cases
-      const { error } = await supabase
-        .from('global_config')
-        .upsert({
+      // Check if config exists
+      const configQuery = query(collection(db, 'global_config'), where('config_key', '==', 'individual_referral_system'));
+      const configSnapshot = await getDocs(configQuery);
+      
+      if (!configSnapshot.empty) {
+        // Update existing config
+        const configDoc = configSnapshot.docs[0];
+        await updateDoc(doc(db, 'global_config', configDoc.id), {
+          config_value: JSON.stringify(configData),
+          updated_at: serverTimestamp()
+        });
+      } else {
+        // Create new config
+        await addDoc(collection(db, 'global_config'), {
           config_key: 'individual_referral_system',
           config_value: JSON.stringify(configData),
-          updated_at: new Date().toISOString()
-        }, {
-          onConflict: 'config_key'
+          created_at: serverTimestamp(),
+          updated_at: serverTimestamp()
         });
-
-      if (error) throw error;
+      }
 
       // Reload config to update state
       await loadIndividualReferralConfig();
@@ -576,14 +548,12 @@ export default function AdminTradingReferrals() {
   const loadConfig = async () => {
     setIsLoading(true);
     try {
-      const { data, error } = await supabase
-        .from('global_config')
-        .select('*')
-        .eq('config_key', 'individual_referral_system')
-        .single();
-
-      if (!error && data) {
-        const savedConfig = JSON.parse(data.config_value || '{}');
+      const configQuery = query(collection(db, 'global_config'), where('config_key', '==', 'individual_referral_system'));
+      const configSnapshot = await getDocs(configQuery);
+      
+      if (!configSnapshot.empty) {
+        const configDoc = configSnapshot.docs[0];
+        const savedConfig = JSON.parse(configDoc.data().config_value || '{}');
         setConfig({
           base_url: savedConfig.base_url || '',
           referral_reward: savedConfig.referral_reward || 2,
@@ -609,15 +579,26 @@ export default function AdminTradingReferrals() {
   const saveConfig = async () => {
     setIsSaving(true);
     try {
-      const { error } = await supabase
-        .from('global_config')
-        .upsert({
+      // Check if config exists
+      const configQuery = query(collection(db, 'global_config'), where('config_key', '==', 'individual_referral_system'));
+      const configSnapshot = await getDocs(configQuery);
+      
+      if (!configSnapshot.empty) {
+        // Update existing config
+        const configDoc = configSnapshot.docs[0];
+        await updateDoc(doc(db, 'global_config', configDoc.id), {
+          config_value: JSON.stringify(config),
+          updated_at: serverTimestamp()
+        });
+      } else {
+        // Create new config
+        await addDoc(collection(db, 'global_config'), {
           config_key: 'individual_referral_system',
           config_value: JSON.stringify(config),
-          updated_at: new Date().toISOString()
+          created_at: serverTimestamp(),
+          updated_at: serverTimestamp()
         });
-
-      if (error) throw error;
+      }
 
       addNotification({
         type: 'success',

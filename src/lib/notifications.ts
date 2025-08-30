@@ -1,4 +1,5 @@
-import { supabase } from './supabase';
+import { db } from './firebase';
+import { collection, addDoc, updateDoc, doc, query, where, orderBy, limit, getDocs, serverTimestamp } from 'firebase/firestore';
 
 export interface NotificationData {
   user_id: string;
@@ -35,18 +36,11 @@ export const sendUserNotification = async (
       type,
       is_read: false,
       action_url: actionUrl,
-      metadata: metadata || {}
+      metadata: metadata || {},
+      created_at: serverTimestamp()
     };
 
-    const { error } = await supabase
-      .from('notifications')
-      .insert([notificationData]);
-
-    if (error) {
-      console.error('Error sending notification:', error);
-      throw error;
-    }
-
+    await addDoc(collection(db, 'notifications'), notificationData);
     console.log('Notification sent successfully to user:', userId);
   } catch (error) {
     console.error('Error sending notification:', error);
@@ -60,15 +54,10 @@ export const sendUserNotification = async (
  */
 export const markNotificationAsRead = async (notificationId: string): Promise<void> => {
   try {
-    const { error } = await supabase
-      .from('notifications')
-      .update({ is_read: true })
-      .eq('id', notificationId);
-
-    if (error) {
-      console.error('Error marking notification as read:', error);
-      throw error;
-    }
+    await updateDoc(doc(db, 'notifications', notificationId), { 
+      is_read: true,
+      updated_at: serverTimestamp()
+    });
   } catch (error) {
     console.error('Error marking notification as read:', error);
   }
@@ -79,21 +68,22 @@ export const markNotificationAsRead = async (notificationId: string): Promise<vo
  * @param userId - The user's telegram ID
  * @param limit - Maximum number of notifications to fetch
  */
-export const getUserNotifications = async (userId: string, limit: number = 50) => {
+export const getUserNotifications = async (userId: string, limitCount: number = 50) => {
   try {
-    const { data, error } = await supabase
-      .from('notifications')
-      .select('*')
-      .eq('user_id', userId)
-      .order('created_at', { ascending: false })
-      .limit(limit);
+    const notificationsQuery = query(
+      collection(db, 'notifications'),
+      where('user_id', '==', userId),
+      orderBy('created_at', 'desc'),
+      limit(limitCount)
+    );
+    
+    const querySnapshot = await getDocs(notificationsQuery);
+    const notifications: any[] = [];
+    querySnapshot.forEach(doc => {
+      notifications.push({ id: doc.id, ...doc.data() });
+    });
 
-    if (error) {
-      console.error('Error fetching notifications:', error);
-      throw error;
-    }
-
-    return data || [];
+    return notifications;
   } catch (error) {
     console.error('Error fetching notifications:', error);
     return [];
@@ -101,21 +91,36 @@ export const getUserNotifications = async (userId: string, limit: number = 50) =
 };
 
 /**
- * Clear all notifications for a user
+ * Delete a notification
+ * @param notificationId - The notification ID
+ */
+export const deleteNotification = async (notificationId: string): Promise<void> => {
+  try {
+    await updateDoc(doc(db, 'notifications', notificationId), { 
+      deleted_at: serverTimestamp(),
+      is_deleted: true
+    });
+  } catch (error) {
+    console.error('Error deleting notification:', error);
+  }
+};
+
+/**
+ * Get unread notifications count for a user
  * @param userId - The user's telegram ID
  */
-export const clearUserNotifications = async (userId: string): Promise<void> => {
+export const getUnreadNotificationsCount = async (userId: string): Promise<number> => {
   try {
-    const { error } = await supabase
-      .from('notifications')
-      .delete()
-      .eq('user_id', userId);
-
-    if (error) {
-      console.error('Error clearing notifications:', error);
-      throw error;
-    }
+    const unreadQuery = query(
+      collection(db, 'notifications'),
+      where('user_id', '==', userId),
+      where('is_read', '==', false)
+    );
+    
+    const querySnapshot = await getDocs(unreadQuery);
+    return querySnapshot.size;
   } catch (error) {
-    console.error('Error clearing notifications:', error);
+    console.error('Error getting unread notifications count:', error);
+    return 0;
   }
 }; 

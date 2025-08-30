@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
-import { Users, Share2, Copy, TrendingUp, Award, Target, Calendar, DollarSign, AlertTriangle, CheckCircle, Clock, RefreshCw, Eye, Shield, Bot, UserCheck, UserX, MessageCircle, Settings, Zap, Activity, Info, BarChart3 } from 'lucide-react';
-import { useUserStore } from '../store/userStore';
+import React, { useState, useEffect } from 'react';
+import { Users, TrendingUp, Award, Share2, Activity, BarChart3, Calendar, Target, Zap, RefreshCw, Settings, Eye, EyeOff, Download, Upload, Filter, Search, UserPlus, UserCheck, UserX, Crown, Star, Medal, Trophy, Gift, DollarSign, ArrowUpRight, ArrowDownLeft, Clock, CheckCircle, XCircle, AlertCircle, Info, HelpCircle, ChevronDown, ChevronUp, Plus, Minus, RotateCcw, Save, Edit, Trash2, Copy, Check, ExternalLink, Link, Hash, Tag, Bot, Shield, MessageCircle } from 'lucide-react';
+import { useFirebaseUserStore } from '../store/firebaseUserStore';
 import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/firebase';
+import { collection, query, where, getDocs, orderBy, limit, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 import ReferralDashboard from '../components/ReferralDashboard';
 import SocialShareModal from '../components/SocialShareModal';
 
@@ -40,7 +41,7 @@ interface ReferralStats {
 }
 
 export default function Referrals() {
-  const { addNotification, referralCode } = useUserStore();
+  const { addNotification, referralCode, loadUserData } = useFirebaseUserStore();
   const [copied, setCopied] = useState(false);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'members' | 'analytics' | 'enhanced' | 'settings'>('overview');
@@ -147,54 +148,67 @@ export default function Referrals() {
   };
 
   // Load real referral stats from database
-  const { telegramId } = useUserStore();
+  const { 
+    telegramId, 
+    balance, 
+    totalReferrals, 
+    totalEarnings 
+  } = useFirebaseUserStore();
 
   useEffect(() => {
     loadReferralStats();
   }, [telegramId]);
+
+  // Force reload user data if referral code is missing
+  useEffect(() => {
+    if (telegramId && !referralCode) {
+      console.warn('🔄 Referral code missing, reloading user data...');
+      loadUserData(telegramId);
+    }
+  }, [telegramId, referralCode, loadUserData]);
 
   const loadReferralStats = async () => {
     if (!telegramId) return;
 
     try {
       // Load referral statistics from database
-      const { data: referrals, error: referralsError } = await supabase
-        .from('referrals')
-        .select('*')
-        .eq('referrer_id', telegramId);
-
-      if (referralsError) throw referralsError;
+      const referralsQuery = query(
+        collection(db, 'referrals'),
+        where('referrer_id', '==', telegramId)
+      );
+      const referralsSnapshot = await getDocs(referralsQuery);
+      const referrals = referralsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       // Load earnings data
-      const { data: earnings, error: earningsError } = await supabase
-        .from('earnings')
-        .select('*')
-        .eq('user_id', telegramId);
-
-      if (earningsError) throw earningsError;
+      const earningsQuery = query(
+        collection(db, 'earnings'),
+        where('user_id', '==', telegramId)
+      );
+      const earningsSnapshot = await getDocs(earningsQuery);
+      const earnings = earningsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       // Calculate stats
       const totalMembers = referrals?.length || 0;
-      const verifiedMembers = referrals?.filter(r => r.status === 'verified').length || 0;
-      const pendingMembers = referrals?.filter(r => r.status === 'pending').length || 0;
-      const suspiciousMembers = referrals?.filter(r => r.status === 'suspicious').length || 0;
+      const verifiedMembers = referrals?.filter((r: any) => r.status === 'verified').length || 0;
+      const pendingMembers = referrals?.filter((r: any) => r.status === 'pending').length || 0;
+      const suspiciousMembers = referrals?.filter((r: any) => r.status === 'suspicious').length || 0;
       const activeMembers = verifiedMembers;
 
-      const totalEarnings = earnings?.reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
+      const totalEarnings = earnings?.reduce((sum: number, e: any) => sum + (e.amount || 0), 0) || 0;
       const today = new Date().toDateString();
-      const todayEarnings = earnings?.filter(e => 
+      const todayEarnings = earnings?.filter((e: any) => 
         new Date(e.created_at).toDateString() === today
-      ).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
+      ).reduce((sum: number, e: any) => sum + (e.amount || 0), 0) || 0;
 
       const thisWeek = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const thisWeekEarnings = earnings?.filter(e => 
+      const thisWeekEarnings = earnings?.filter((e: any) => 
         new Date(e.created_at) >= thisWeek
-      ).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
+      ).reduce((sum: number, e: any) => sum + (e.amount || 0), 0) || 0;
 
       const thisMonth = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
-      const thisMonthEarnings = earnings?.filter(e => 
+      const thisMonthEarnings = earnings?.filter((e: any) => 
         new Date(e.created_at) >= thisMonth
-      ).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
+      ).reduce((sum: number, e: any) => sum + (e.amount || 0), 0) || 0;
 
              // New level calculation based on referral system
        const getLevelInfo = (totalMembers: number) => {
@@ -241,27 +255,36 @@ export default function Referrals() {
 
     try {
       // Load referrals with user data
-      const { data: referrals, error: referralsError } = await supabase
-        .from('referrals')
-        .select(`
-          *,
-          users!referrals_referred_id_fkey (
-            telegram_id,
-            first_name,
-            last_name,
-            username,
-            photo_url,
-            created_at,
-            last_active
-          )
-        `)
-        .eq('referrer_id', telegramId)
-        .order('created_at', { ascending: false });
+      const referralsQuery = query(
+        collection(db, 'referrals'),
+        where('referrer_id', '==', telegramId),
+        orderBy('created_at', 'desc')
+      );
+      const referralsSnapshot = await getDocs(referralsQuery);
+      const referrals = referralsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      if (referralsError) throw referralsError;
+      // Load user data for each referral
+      const referralsWithUsers = await Promise.all(
+        referrals.map(async (ref: any) => {
+          if (ref.referred_id) {
+            const userQuery = query(
+              collection(db, 'users'),
+              where('telegram_id', '==', ref.referred_id)
+            );
+            const userSnapshot = await getDocs(userQuery);
+            const userData = userSnapshot.docs[0]?.data();
+            
+            return {
+              ...ref,
+              users: userData
+            };
+          }
+          return ref;
+        })
+      );
 
       // Transform data to GroupMember format
-      const members = referrals?.map((ref, index) => {
+      const members = referralsWithUsers?.map((ref: any, index: number) => {
         const user = ref.users;
         const joinDate = new Date(ref.created_at);
         const lastActive = ref.last_active ? new Date(ref.last_active) : joinDate;
@@ -289,10 +312,10 @@ export default function Referrals() {
           lastActivity: formatTimeAgo(lastActive),
           messageCount,
           isBot: false, // Would be determined by actual bot detection
-                     referralValue: ref.status === 'verified' ? 2 : 0, // Updated to 2 taka as per new system
-           rejoinCount: ref.rejoin_count || 0,
-           isActive: ref.is_active !== false,
-           lastJoinDate: ref.last_join_date || ref.created_at
+          referralValue: ref.status === 'verified' ? 2 : 0, // Updated to 2 taka as per new system
+          rejoinCount: ref.rejoin_count || 0,
+          isActive: ref.is_active !== false,
+          lastJoinDate: ref.last_join_date || ref.created_at
         };
       }) || [];
 
@@ -317,15 +340,16 @@ export default function Referrals() {
 
   const loadIndividualReferralConfig = async () => {
     try {
-      const { data, error } = await supabase
-        .from('global_config')
-        .select('*')
-        .eq('config_key', 'individual_referral_system')
-        .single();
-
-      if (!error && data) {
-        const config = JSON.parse(data.config_value || '{}');
-                setIndividualReferralConfig({
+      const configQuery = query(
+        collection(db, 'global_config'),
+        where('config_key', '==', 'individual_referral_system')
+      );
+      const configSnapshot = await getDocs(configQuery);
+      
+      if (!configSnapshot.empty) {
+        const configDoc = configSnapshot.docs[0];
+        const config = JSON.parse(configDoc.data().config_value || '{}');
+        setIndividualReferralConfig({
           base_url: config.base_url || '',
           referral_reward: config.referral_reward || 2, // Updated to 2 taka as per new system
           is_active: config.is_active !== false,
@@ -339,14 +363,30 @@ export default function Referrals() {
 
   // Generate individual referral link for current user
   const generateIndividualReferralLink = () => {
-    if (!telegramId) return '';
+    console.log('🔗 Generating referral link...', { telegramId, referralCode });
     
-    // Get user's unique referral code from database
-    const userReferralCode = referralCode || `BT${telegramId.slice(-6).toUpperCase()}`;
+    if (!telegramId) {
+      console.warn('❌ No telegram ID available for referral link generation');
+      return '';
+    }
+    
+    // Get user's unique referral code from database or generate fallback
+    let userReferralCode = referralCode;
+    
+    if (!userReferralCode) {
+      console.warn('⚠️ No referral code in store, generating fallback...');
+      userReferralCode = `BT${telegramId.slice(-6).toUpperCase()}`;
+      
+      // Try to update the store with the generated code
+      // This will trigger a re-render when the actual code is loaded
+      console.log('🔄 Using fallback referral code:', userReferralCode);
+    }
     
     // Create bot referral link with auto-start trigger
-    const botUsername = 'CashPoinntbot'; // Update with your actual bot username
+    const botUsername = 'CashPointsbot'; // Update with your actual bot username
     const individualLink = `https://t.me/${botUsername}?start=${userReferralCode}`;
+    
+    console.log('✅ Generated referral link:', individualLink);
     return individualLink;
   };
 
@@ -393,17 +433,19 @@ export default function Referrals() {
        await loadGroupMembers();
        
        // Check for duplicate join warnings
-       const { data: notifications } = await supabase
-         .from('notifications')
-         .select('*')
-         .eq('user_id', telegramId)
-         .eq('type', 'warning')
-         .eq('title', 'Duplicate Join Warning')
-         .order('created_at', { ascending: false })
-         .limit(5);
+       const notificationsQuery = query(
+         collection(db, 'notifications'),
+         where('user_id', '==', telegramId),
+         where('type', '==', 'warning'),
+         where('title', '==', 'Duplicate Join Warning'),
+         orderBy('created_at', 'desc'),
+         limit(5)
+       );
+       const notificationsSnapshot = await getDocs(notificationsQuery);
        
-       if (notifications && notifications.length > 0) {
-         notifications.forEach(notif => {
+       if (!notificationsSnapshot.empty) {
+         notificationsSnapshot.forEach((doc) => {
+           const notif = doc.data();
            addNotification({
              type: 'warning',
              title: 'Duplicate Join Warning',
@@ -444,7 +486,7 @@ export default function Referrals() {
       case 'verified': return <CheckCircle className="w-4 h-4 text-green-400" />;
       case 'active': return <UserCheck className="w-4 h-4 text-blue-400" />;
       case 'pending': return <Clock className="w-4 h-4 text-yellow-400" />;
-      case 'suspicious': return <AlertTriangle className="w-4 h-4 text-red-400" />;
+      case 'suspicious': return <AlertCircle className="w-4 h-4 text-red-400" />;
       default: return <UserX className="w-4 h-4 text-gray-400" />;
     }
   };
@@ -478,27 +520,27 @@ export default function Referrals() {
 
     try {
       // Load comprehensive analytics data
-      const { data: referrals, error: referralsError } = await supabase
-        .from('referrals')
-        .select('*')
-        .eq('referrer_id', telegramId);
-
-      if (referralsError) throw referralsError;
+      const referralsQuery = query(
+        collection(db, 'referrals'),
+        where('referrer_id', '==', telegramId)
+      );
+      const referralsSnapshot = await getDocs(referralsQuery);
+      const referrals = referralsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       // Load earnings data for trends
-      const { data: earnings, error: earningsError } = await supabase
-        .from('earnings')
-        .select('*')
-        .eq('user_id', telegramId)
-        .order('created_at', { ascending: false });
-
-      if (earningsError) throw earningsError;
+      const earningsQuery = query(
+        collection(db, 'earnings'),
+        where('user_id', '==', telegramId),
+        orderBy('created_at', 'desc')
+      );
+      const earningsSnapshot = await getDocs(earningsQuery);
+      const earnings = earningsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       // Calculate analytics metrics
       const totalReferrals = referrals?.length || 0;
-      const verifiedReferrals = referrals?.filter(r => r.status === 'verified').length || 0;
-      const suspiciousReferrals = referrals?.filter(r => r.status === 'suspicious').length || 0;
-      const pendingReferrals = referrals?.filter(r => r.status === 'pending').length || 0;
+      const verifiedReferrals = referrals?.filter((r: any) => r.status === 'verified').length || 0;
+      const suspiciousReferrals = referrals?.filter((r: any) => r.status === 'suspicious').length || 0;
+      const pendingReferrals = referrals?.filter((r: any) => r.status === 'pending').length || 0;
 
       // Fake user detection rate
       const fakeUserDetectionRate = totalReferrals > 0 
@@ -520,12 +562,12 @@ export default function Referrals() {
       const currentMonth = new Date().getMonth();
       const currentYear = new Date().getFullYear();
       
-      const currentMonthReferrals = referrals?.filter(r => {
+      const currentMonthReferrals = referrals?.filter((r: any) => {
         const refDate = new Date(r.created_at);
         return refDate.getMonth() === currentMonth && refDate.getFullYear() === currentYear;
       }).length || 0;
 
-      const previousMonthReferrals = referrals?.filter(r => {
+      const previousMonthReferrals = referrals?.filter((r: any) => {
         const refDate = new Date(r.created_at);
         const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
         const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
@@ -537,24 +579,24 @@ export default function Referrals() {
         : currentMonthReferrals > 0 ? 100 : 0;
 
       // Earnings trend
-      const currentMonthEarnings = earnings?.filter(e => {
+      const currentMonthEarnings = earnings?.filter((e: any) => {
         const earningDate = new Date(e.created_at);
         return earningDate.getMonth() === currentMonth && earningDate.getFullYear() === currentYear;
-      }).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
+      }).reduce((sum: number, e: any) => sum + (e.amount || 0), 0) || 0;
 
-      const previousMonthEarnings = earnings?.filter(e => {
+      const previousMonthEarnings = earnings?.filter((e: any) => {
         const earningDate = new Date(e.created_at);
         const prevMonth = currentMonth === 0 ? 11 : currentMonth - 1;
         const prevYear = currentMonth === 0 ? currentYear - 1 : currentYear;
         return earningDate.getMonth() === prevMonth && earningDate.getFullYear() === prevYear;
-      }).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
+      }).reduce((sum: number, e: any) => sum + (e.amount || 0), 0) || 0;
 
       const earningsTrend = previousMonthEarnings > 0 
         ? (((currentMonthEarnings - previousMonthEarnings) / previousMonthEarnings) * 100).toFixed(1)
         : currentMonthEarnings > 0 ? 100 : 0;
 
       // Member retention rate (users who stayed active)
-      const retentionReferrals = referrals?.filter(r => {
+      const retentionReferrals = referrals?.filter((r: any) => {
         const refDate = new Date(r.created_at);
         const daysSinceReferral = (Date.now() - refDate.getTime()) / (1000 * 60 * 60 * 24);
         return daysSinceReferral > 7 && r.status === 'verified'; // Active for more than 7 days
@@ -572,15 +614,15 @@ export default function Referrals() {
         const monthName = month.toLocaleDateString('en-US', { month: 'short' });
         const monthYear = month.getFullYear();
         
-        const monthReferrals = referrals?.filter(r => {
+        const monthReferrals = referrals?.filter((r: any) => {
           const refDate = new Date(r.created_at);
           return refDate.getMonth() === month.getMonth() && refDate.getFullYear() === monthYear;
         }).length || 0;
 
-        const monthEarnings = earnings?.filter(e => {
+        const monthEarnings = earnings?.filter((e: any) => {
           const earningDate = new Date(e.created_at);
           return earningDate.getMonth() === month.getMonth() && earningDate.getFullYear() === monthYear;
-        }).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
+        }).reduce((sum: number, e: any) => sum + (e.amount || 0), 0) || 0;
 
         monthlyStats.push({
           month: monthName,
@@ -597,15 +639,15 @@ export default function Referrals() {
         const weekEnd = new Date(weekStart);
         weekEnd.setDate(weekStart.getDate() + 6);
         
-        const weekReferrals = referrals?.filter(r => {
+        const weekReferrals = referrals?.filter((r: any) => {
           const refDate = new Date(r.created_at);
           return refDate >= weekStart && refDate <= weekEnd;
         }).length || 0;
 
-        const weekEarnings = earnings?.filter(e => {
+        const weekEarnings = earnings?.filter((e: any) => {
           const earningDate = new Date(e.created_at);
           return earningDate >= weekStart && earningDate <= weekEnd;
-        }).reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
+        }).reduce((sum: number, e: any) => sum + (e.amount || 0), 0) || 0;
 
         weeklyStats.push({
           week: `Week ${4 - i}`,
@@ -951,7 +993,7 @@ export default function Referrals() {
               </div>
               <div className="text-center">
                 <div className="w-12 h-12 bg-red-500/20 rounded-full flex items-center justify-center mx-auto mb-2">
-                  <AlertTriangle className="w-6 h-6 text-red-400" />
+                  <AlertCircle className="w-6 h-6 text-red-400" />
                 </div>
                 <p className="text-xs text-gray-400">Suspicious</p>
                 <p className="text-lg font-semibold text-red-400">{referralStats.suspiciousMembers}</p>

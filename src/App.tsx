@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, UNSAFE_future } from 'react-router-dom';
 import { WagmiProvider } from 'wagmi';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { config, queryClient } from './lib/wagmi';
@@ -20,11 +20,12 @@ import AdminTasks from './pages/admin/Tasks';
 import AdminWithdrawals from './pages/admin/Withdrawals';
 import AdminTradingReferrals from './pages/admin/TradingReferrals';
 import AdminSettings from './pages/admin/Settings';
-import { useUserStore } from './store/userStore';
+import ReferralDebug from './debug/ReferralDebug';
+import { useFirebaseUserStore } from './store/firebaseUserStore';
 
 function App() {
   const [loading, setLoading] = useState(true);
-  const { loadUserData, setUser } = useUserStore();
+  const { loadUserData, setUser } = useFirebaseUserStore();
 
   // Initialize Telegram Web App and load user data
   useEffect(() => {
@@ -82,26 +83,17 @@ function App() {
     <WagmiProvider config={config}>
       <QueryClientProvider client={queryClient}>
         <div className="transition-opacity duration-500 opacity-100">
-          <Router>
+          <Router future={{ v7_startTransition: true, v7_relativeSplatPath: true }}>
             <Routes>
               {/* Admin Routes */}
               <Route path="/admin" element={<AdminLogin />} />
-              <Route
-                path="/admin/*"
-                element={
-                  <AdminRoute>
-                    <Routes>
-                      <Route path="/dashboard" element={<AdminDashboard />} />
-                      <Route path="/users" element={<AdminUsers />} />
-                      <Route path="/referrals" element={<AdminReferrals />} />
-                      <Route path="/tasks" element={<AdminTasks />} />
-                      <Route path="/withdrawals" element={<AdminWithdrawals />} />
-                      <Route path="/trading-referrals" element={<AdminTradingReferrals />} />
-                      <Route path="/settings" element={<AdminSettings />} />
-                    </Routes>
-                  </AdminRoute>
-                }
-              />
+              <Route path="/admin/dashboard" element={<AdminRoute><AdminDashboard /></AdminRoute>} />
+              <Route path="/admin/users" element={<AdminRoute><AdminUsers /></AdminRoute>} />
+              <Route path="/admin/referrals" element={<AdminRoute><AdminReferrals /></AdminRoute>} />
+              <Route path="/admin/tasks" element={<AdminRoute><AdminTasks /></AdminRoute>} />
+              <Route path="/admin/withdrawals" element={<AdminRoute><AdminWithdrawals /></AdminRoute>} />
+              <Route path="/admin/trading-referrals" element={<AdminRoute><AdminTradingReferrals /></AdminRoute>} />
+              <Route path="/admin/settings" element={<AdminRoute><AdminSettings /></AdminRoute>} />
 
               {/* User Routes */}
               <Route
@@ -124,6 +116,7 @@ function App() {
                         <Route path="/wallet" element={<Wallet />} />
                         <Route path="/earnings" element={<Earnings />} />
                         <Route path="/leaderboard" element={<Leaderboard />} />
+                        <Route path="/debug" element={<ReferralDebug />} />
                       </Routes>
                       <BottomNav />
                     </div>

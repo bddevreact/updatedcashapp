@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Wallet, Trophy, Gift, Share2, Video, Users, MessageCircle as MessageChat, Star, Zap, Clock, CheckCircle2, TrendingUp, Calendar, Target, Award, DollarSign, CheckCircle, AlertCircle, RefreshCw, TrendingUp as TrendingUpIcon, Activity, Zap as ZapIcon } from 'lucide-react';
-import { useUserStore } from '../store/userStore';
+import { useFirebaseUserStore } from '../store/firebaseUserStore';
 import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/firebase';
+import { collection, query, orderBy, limit, getDocs, where, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
 
 interface Task {
   id: string; // Changed from number to string for UUID
@@ -153,7 +154,7 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onComplete, completed, cooldo
 };
 
 export default function Tasks() {
-  const { telegramId, balance, level, stats, addNotification, updateBalance } = useUserStore();
+  const { telegramId, balance, level, stats, addNotification, updateBalance } = useFirebaseUserStore();
   const [activeTab, setActiveTab] = useState<'daily' | 'social' | 'special'>('daily');
   const [completedTasks, setCompletedTasks] = useState<Set<string>>(new Set());
   const [taskCooldowns, setTaskCooldowns] = useState<Record<string, number>>({});
@@ -260,13 +261,14 @@ export default function Tasks() {
     if (!telegramId) return;
     
     try {
-      const { data, error } = await supabase
-        .from('task_completions')
-        .select('*')
-        .eq('user_id', telegramId)
-        .gte('created_at', new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString());
-
-      if (error) throw error;
+      const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      const taskCompletionsQuery = query(
+        collection(db, 'task_completions'),
+        where('user_id', '==', telegramId),
+        where('created_at', '>=', sevenDaysAgo.toISOString())
+      );
+      const taskCompletionsSnapshot = await getDocs(taskCompletionsQuery);
+      const data = taskCompletionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       // Calculate streak based on consecutive days
       const dates = data?.map(d => new Date(d.created_at).toDateString()) || [];
@@ -296,15 +298,18 @@ export default function Tasks() {
     
     try {
       const today = new Date().toDateString();
-      const { data, error } = await supabase
-        .from('task_completions')
-        .select('*')
-        .eq('user_id', telegramId)
-        .eq('task_type', 'daily_checkin')
-        .gte('created_at', new Date(today).toISOString())
-        .lt('created_at', new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString());
-
-      if (error) throw error;
+      const todayStart = new Date(today);
+      const tomorrowStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      
+      const dailyCheckInQuery = query(
+        collection(db, 'task_completions'),
+        where('user_id', '==', telegramId),
+        where('task_type', '==', 'daily_checkin'),
+        where('created_at', '>=', todayStart.toISOString()),
+        where('created_at', '<', tomorrowStart.toISOString())
+      );
+      const dailyCheckInSnapshot = await getDocs(dailyCheckInQuery);
+      const data = dailyCheckInSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
       setDailyCheckIn(data && data.length > 0);
     } catch (error) {
@@ -317,14 +322,17 @@ export default function Tasks() {
     
     try {
       const today = new Date().toDateString();
-      const { data, error } = await supabase
-        .from('referrals')
-        .select('*')
-        .eq('referrer_id', telegramId)
-        .gte('created_at', new Date(today).toISOString())
-        .lt('created_at', new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString());
-
-      if (error) throw error;
+      const todayStart = new Date(today);
+      const tomorrowStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      
+      const referralsQuery = query(
+        collection(db, 'referrals'),
+        where('referrer_id', '==', telegramId),
+        where('created_at', '>=', todayStart.toISOString()),
+        where('created_at', '<', tomorrowStart.toISOString())
+      );
+      const referralsSnapshot = await getDocs(referralsQuery);
+      const data = referralsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
       setTodayReferrals(data?.length || 0);
     } catch (error) {
@@ -351,16 +359,14 @@ export default function Tasks() {
   const loadCompletedTasks = async () => {
     if (!telegramId) return;
 
-    const { data, error } = await supabase
-      .from('task_completions')
-      .select('task_id, completed_at')
-      .eq('user_id', telegramId)
-      .gte('completed_at', new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString());
-
-    if (error) {
-      console.error('Error loading completed tasks:', error);
-      return;
-    }
+    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+    const completedTasksQuery = query(
+      collection(db, 'task_completions'),
+      where('user_id', '==', telegramId),
+      where('completed_at', '>=', oneDayAgo.toISOString())
+    );
+    const completedTasksSnapshot = await getDocs(completedTasksQuery);
+    const data = completedTasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
     const completed: Set<string> = new Set();
     const cooldowns: Record<string, number> = {};
@@ -494,29 +500,27 @@ export default function Tasks() {
           completed_at: new Date().toISOString()
       };
 
-      const { error } = await supabase
-        .from('task_completions')
-        .insert([completionData]);
+      const completionRef = await addDoc(collection(db, 'task_completions'), completionData);
 
-      if (error) {
-        console.error('Database error:', error);
-        throw new Error(`Database error: ${error.message}`);
+      if (!completionRef) {
+        throw new Error('Failed to create task completion record');
       }
 
       // Update user balance in database
-      const { error: balanceError } = await supabase
-        .from('users')
-        .update({ 
-          balance: balance + task.reward,
-          updated_at: new Date().toISOString()
-        })
-        .eq('telegram_id', telegramId);
-
-      if (balanceError) {
+      try {
+        const userQuery = query(collection(db, 'users'), where('telegram_id', '==', telegramId));
+        const userSnapshot = await getDocs(userQuery);
+        if (!userSnapshot.empty) {
+          const userDoc = userSnapshot.docs[0];
+          await updateDoc(doc(db, 'users', userDoc.id), { 
+            balance: balance + task.reward,
+            updated_at: serverTimestamp()
+          });
+          // Update store balance
+          await updateBalance(task.reward);
+        }
+      } catch (balanceError) {
         console.error('Balance update error:', balanceError);
-      } else {
-        // Update store balance
-        await updateBalance(task.reward);
       }
 
       // Update local state
@@ -633,16 +637,18 @@ export default function Tasks() {
     if (!tradingUID.trim()) return;
 
     try {
-      const { error } = await supabase
-        .from('user_activities')
-        .insert({
-          user_id: telegramId,
-          activity_type: 'trading_uid',
-          activity_data: JSON.stringify({ uid: tradingUID, status: 'pending' }),
-          created_at: new Date().toISOString()
-        });
+      const activityData = {
+        user_id: telegramId,
+        activity_type: 'trading_uid',
+        activity_data: JSON.stringify({ uid: tradingUID, status: 'pending' }),
+        created_at: new Date().toISOString()
+      };
+      
+      const activityRef = await addDoc(collection(db, 'user_activities'), activityData);
 
-      if (error) throw error;
+      if (!activityRef) {
+        throw new Error('Failed to create activity record');
+      }
 
       setTradingStatus('pending');
       setTradingSubmissionTime(new Date().toISOString());
@@ -712,26 +718,26 @@ export default function Tasks() {
       });
 
       // Insert into special task submissions table
-      const { data, error } = await supabase
-        .from('special_task_submissions')
-        .insert({
-          user_id: telegramId,
-          task_id: currentSpecialTask.id,
-          task_type: currentSpecialTask.type,
-          uid_submitted: specialTaskUID.trim(),
-          status: 'pending',
-          reward_amount: currentSpecialTask.reward,
-          created_at: new Date().toISOString()
-        })
-        .select()
-        .single();
+      const submissionData = {
+        user_id: telegramId,
+        task_id: currentSpecialTask.id,
+        task_type: currentSpecialTask.type,
+        uid_submitted: specialTaskUID.trim(),
+        status: 'pending',
+        reward_amount: currentSpecialTask.reward,
+        created_at: new Date().toISOString()
+      };
+      
+      const submissionRef = await addDoc(collection(db, 'special_task_submissions'), submissionData);
 
-      if (error) throw error;
+      if (!submissionRef) {
+        throw new Error('Failed to create submission record');
+      }
 
       // Update local state with submission details
       setSpecialTaskStatus('pending');
       setSpecialTaskSubmissionTime(new Date().toISOString());
-      setSpecialTaskSubmissionId(data.id);
+      setSpecialTaskSubmissionId(submissionRef.id);
       
       // Show success notification
       addNotification({
@@ -767,21 +773,16 @@ export default function Tasks() {
     if (!telegramId) return false;
     
     try {
-      const { data, error } = await supabase
-        .from('special_task_submissions')
-        .select('id, status, created_at')
-        .eq('user_id', telegramId)
-        .eq('uid_submitted', uid.trim())
-        .eq('task_id', taskId)
-        .single();
-
-      if (error && error.code !== 'PGRST116') {
-        // PGRST116 means no rows returned (UID not submitted before)
-        console.error('Error checking UID submission:', error);
-        return false;
-      }
-
-      if (data) {
+      const uidSubmissionQuery = query(
+        collection(db, 'special_task_submissions'),
+        where('user_id', '==', telegramId),
+        where('uid_submitted', '==', uid.trim()),
+        where('task_id', '==', taskId)
+      );
+      const uidSubmissionSnapshot = await getDocs(uidSubmissionQuery);
+      
+      if (!uidSubmissionSnapshot.empty) {
+        const data = uidSubmissionSnapshot.docs[0].data();
         // UID already submitted by this user
         return {
           exists: true,
@@ -802,21 +803,17 @@ export default function Tasks() {
     
     try {
       // Check if this UID has been used by ANY user globally
-      const { data, error } = await supabase
-        .from('special_task_submissions')
-        .select('id, status, created_at, user_id')
-        .eq('uid_submitted', uid.trim())
-        .eq('task_id', taskId)
-        .order('created_at', { ascending: false })
-        .limit(1);
-
-      if (error) {
-        console.error('Error checking global UID submission:', error);
-        return false;
-      }
-
-      if (data && data.length > 0) {
-        const submission = data[0];
+      const globalUIDQuery = query(
+        collection(db, 'special_task_submissions'),
+        where('uid_submitted', '==', uid.trim()),
+        where('task_id', '==', taskId),
+        orderBy('created_at', 'desc'),
+        limit(1)
+      );
+      const globalUIDSnapshot = await getDocs(globalUIDQuery);
+      
+      if (!globalUIDSnapshot.empty) {
+        const submission = globalUIDSnapshot.docs[0].data();
         
         // Check if this UID was submitted by the current user
         if (submission.user_id === telegramId) {
@@ -848,22 +845,18 @@ export default function Tasks() {
     if (!telegramId || !currentSpecialTask) return;
     
     try {
-      const { data, error } = await supabase
-        .from('special_task_submissions')
-        .select('id, status, admin_notes, verified_at, created_at')
-        .eq('user_id', telegramId)
-        .eq('task_id', currentSpecialTask.id)
-        .eq('uid_submitted', specialTaskUID.trim())
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single();
-
-      if (error && error.code !== 'PGRST116') {
-        console.error('Error checking UID status:', error);
-        return;
-      }
-
-      if (data) {
+      const currentUIDQuery = query(
+        collection(db, 'special_task_submissions'),
+        where('user_id', '==', telegramId),
+        where('task_id', '==', currentSpecialTask.id),
+        where('uid_submitted', '==', specialTaskUID.trim()),
+        orderBy('created_at', 'desc'),
+        limit(1)
+      );
+      const currentUIDSnapshot = await getDocs(currentUIDQuery);
+      
+      if (!currentUIDSnapshot.empty) {
+        const data = currentUIDSnapshot.docs[0].data();
         setSpecialTaskStatus(data.status);
         setSpecialTaskSubmissionId(data.id);
         setSpecialTaskSubmissionTime(data.created_at);
@@ -959,21 +952,20 @@ export default function Tasks() {
 
     try {
       // Test user data fetch
-      const { data: userData, error: userError } = await supabase
-        .from('users')
-        .select('*')
-        .eq('telegram_id', telegramId)
-        .single();
-
-      if (userError) {
-        console.error('User fetch error:', userError);
+      const userQuery = query(collection(db, 'users'), where('telegram_id', '==', telegramId));
+      const userSnapshot = await getDocs(userQuery);
+      
+      if (userSnapshot.empty) {
+        console.error('User not found');
         addNotification({
           type: 'error',
           title: 'User Error',
-          message: `User fetch error: ${userError.message}`
+          message: 'User not found in database'
         });
         return;
       }
+      
+      const userData = userSnapshot.docs[0].data();
 
       console.log('User data:', userData);
       addNotification({
@@ -983,27 +975,20 @@ export default function Tasks() {
       });
 
       // Test task completions table
-      const { data: completions, error: completionsError } = await supabase
-        .from('task_completions')
-        .select('*')
-        .eq('user_id', telegramId)
-        .limit(5);
-
-      if (completionsError) {
-        console.error('Completions fetch error:', completionsError);
-        addNotification({
-          type: 'warning',
-          title: 'Completions Error',
-          message: `Completions table error: ${completionsError.message}`
-        });
-      } else {
-        console.log('Task completions:', completions);
-        addNotification({
-          type: 'info',
-          title: 'Task Completions Found',
-          message: `Found ${completions?.length || 0} task completions`
-        });
-      }
+      const completionsQuery = query(
+        collection(db, 'task_completions'),
+        where('user_id', '==', telegramId),
+        limit(5)
+      );
+      const completionsSnapshot = await getDocs(completionsQuery);
+      const completions = completionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      console.log('Task completions:', completions);
+      addNotification({
+        type: 'info',
+        title: 'Task Completions Found',
+        message: `Found ${completions?.length || 0} task completions`
+      });
 
     } catch (error) {
       console.error('Database test error:', error);
@@ -1051,35 +1036,71 @@ export default function Tasks() {
     if (isSyncing) return;
     
     setIsSyncing(true);
+    let taskTemplates: any[] = []; // Declare at function level
+    
     try {
-      const { data: taskTemplates, error } = await supabase
-        .from('task_templates')
-        .select('*')
-        .eq('is_active', true)
-        .order('updated_at', { ascending: false });
-
-      if (error) {
-        console.error('Error syncing tasks:', error);
-        return;
+      // First try to get all active tasks without ordering
+      let taskTemplatesQuery = query(
+        collection(db, 'task_templates'),
+        where('is_active', '==', true)
+      );
+      
+      try {
+        const taskTemplatesSnapshot = await getDocs(taskTemplatesQuery);
+        taskTemplates = taskTemplatesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        console.log('Raw task templates from Firestore (sync):', taskTemplates);
+        console.log('Number of tasks found (sync):', taskTemplates.length);
+        
+        // If no tasks found with is_active filter, try getting all tasks
+        if (taskTemplates.length === 0) {
+          console.log('No tasks found with is_active filter, trying to get all tasks...');
+          const allTasksSnapshot = await getDocs(collection(db, 'task_templates'));
+          taskTemplates = allTasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          console.log('All tasks found (sync):', taskTemplates);
+        }
+        
+        // Sort manually if needed
+        if (taskTemplates.length > 0) {
+          taskTemplates.sort((a, b) => {
+            const aDate = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+            const bDate = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+            return bDate - aDate; // Descending order
+          });
+        }
+      } catch (error) {
+        console.error('Error in inner query (sync):', error);
+        // If inner query fails, try to get all tasks without filter
+        try {
+          const allTasksSnapshot = await getDocs(collection(db, 'task_templates'));
+          taskTemplates = allTasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          console.log('Fallback (sync): All tasks found:', taskTemplates);
+        } catch (fallbackError) {
+          console.error('Fallback query also failed (sync):', fallbackError);
+          taskTemplates = [];
+        }
       }
 
       if (taskTemplates && taskTemplates.length > 0) {
-        const formattedTasks: Task[] = taskTemplates.map(template => ({
-          id: template.id,
-          title: template.title,
-          subtitle: template.subtitle || '',
-          reward: template.reward,
-          type: template.type,
-          icon: template.icon || 'gift',
-          buttonText: template.button_text || 'COMPLETE',
-          cooldown: template.cooldown || 0,
-          description: template.description || '',
-          isActive: template.is_active || true,
-          completionCount: 0,
-          maxCompletions: template.max_completions || 1,
-          url: template.url || '',
-          special: template.type === 'trading_platform' || template.type === 'referral'
-        }));
+        const formattedTasks: Task[] = taskTemplates.map(template => {
+          console.log('Processing template in sync:', template); // Debug log
+          return {
+            id: template.id,
+            title: template.title,
+            subtitle: template.subtitle || '',
+            reward: template.reward,
+            type: template.type,
+            icon: template.icon || 'gift',
+            buttonText: template.button_text || 'COMPLETE',
+            cooldown: template.cooldown || 0,
+            description: template.description || '',
+            isActive: template.is_active !== false, // Explicit boolean check
+            completionCount: 0,
+            maxCompletions: template.max_completions || 1,
+            url: template.url || '',
+            special: template.type === 'trading_platform' || template.type === 'referral'
+          };
+        });
         
         // Check if tasks have changed
         const currentTaskIds = tasks.map(t => t.id).sort().join(',');
@@ -1155,40 +1176,71 @@ export default function Tasks() {
 
   // Load tasks from database
   const loadTasksFromDatabase = async () => {
+    let taskTemplates: any[] = []; // Declare at function level
+    
     try {
-      const { data: taskTemplates, error } = await supabase
-        .from('task_templates')
-        .select('*')
-        .eq('is_active', true)
-        .order('updated_at', { ascending: false });
-
-      if (error) {
-        console.error('Error loading tasks:', error);
-        addNotification({
-          type: 'error',
-          title: 'Task Loading Failed',
-          message: 'Failed to load tasks from database'
-        });
-        return;
+      // First try to get all active tasks without ordering
+      let taskTemplatesQuery = query(
+        collection(db, 'task_templates'),
+        where('is_active', '==', true)
+      );
+      
+      try {
+        const taskTemplatesSnapshot = await getDocs(taskTemplatesQuery);
+        taskTemplates = taskTemplatesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+        
+        console.log('Raw task templates from Firestore (load):', taskTemplates);
+        console.log('Number of tasks found (load):', taskTemplates.length);
+        
+        // If no tasks found with is_active filter, try getting all tasks
+        if (taskTemplates.length === 0) {
+          console.log('No tasks found with is_active filter, trying to get all tasks...');
+          const allTasksSnapshot = await getDocs(collection(db, 'task_templates'));
+          taskTemplates = allTasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          console.log('All tasks found:', taskTemplates);
+        }
+        
+        // Sort manually if needed
+        if (taskTemplates.length > 0) {
+          taskTemplates.sort((a, b) => {
+            const aDate = a.updated_at ? new Date(a.updated_at).getTime() : 0;
+            const bDate = b.updated_at ? new Date(b.updated_at).getTime() : 0;
+            return bDate - aDate; // Descending order
+          });
+        }
+      } catch (error) {
+        console.error('Error in inner query (load):', error);
+        // If inner query fails, try to get all tasks without filter
+        try {
+          const allTasksSnapshot = await getDocs(collection(db, 'task_templates'));
+          taskTemplates = allTasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+          console.log('Fallback (load): All tasks found:', taskTemplates);
+        } catch (fallbackError) {
+          console.error('Fallback query also failed (load):', fallbackError);
+          taskTemplates = [];
+        }
       }
 
       if (taskTemplates && taskTemplates.length > 0) {
-        const formattedTasks: Task[] = taskTemplates.map(template => ({
-          id: template.id,
-          title: template.title,
-          subtitle: template.subtitle || '',
-          reward: template.reward,
-          type: template.type,
-          icon: template.icon || 'gift',
-          buttonText: template.button_text || 'COMPLETE',
-          cooldown: template.cooldown || 0,
-          description: template.description || '',
-          isActive: template.is_active || true,
-          completionCount: 0,
-          maxCompletions: template.max_completions || 1,
-          url: template.url || '',
-          special: template.type === 'trading_platform' || template.type === 'referral'
-        }));
+        const formattedTasks: Task[] = taskTemplates.map(template => {
+          console.log('Processing template in load:', template); // Debug log
+          return {
+            id: template.id,
+            title: template.title,
+            subtitle: template.subtitle || '',
+            reward: template.reward,
+            type: template.type,
+            icon: template.icon || 'gift',
+            buttonText: template.button_text || 'COMPLETE',
+            cooldown: template.cooldown || 0,
+            description: template.description || '',
+            isActive: template.is_active !== false, // Explicit boolean check
+            completionCount: 0,
+            maxCompletions: template.max_completions || 1,
+            url: template.url || '',
+            special: template.type === 'trading_platform' || template.type === 'referral'
+          };
+        });
         
         setTasks(formattedTasks);
         setLastTaskUpdate(new Date());
@@ -1244,7 +1296,19 @@ export default function Tasks() {
 
   // Load tasks when component mounts
   useEffect(() => {
+    console.log('Tasks component mounted, loading tasks...');
     loadTasksFromDatabase();
+    
+    // Also test basic Firestore access
+    const testFirestoreAccess = async () => {
+      try {
+        const testSnapshot = await getDocs(collection(db, 'task_templates'));
+        console.log('Firestore access test successful, total documents:', testSnapshot.size);
+      } catch (error) {
+        console.error('Firestore access test failed:', error);
+      }
+    };
+    testFirestoreAccess();
   }, []);
 
   // Check UID availability in real-time
@@ -1252,19 +1316,15 @@ export default function Tasks() {
     if (!uid.trim() || !currentSpecialTask) return;
     
     try {
-      const { data, error } = await supabase
-        .from('special_task_submissions')
-        .select('id, user_id, status')
-        .eq('uid_submitted', uid.trim())
-        .eq('task_id', currentSpecialTask.id)
-        .single();
-
-      if (error && error.code !== 'PGRST116') {
-        console.error('Error checking UID availability:', error);
-        return;
-      }
-
-      if (data) {
+      const uidAvailabilityQuery = query(
+        collection(db, 'special_task_submissions'),
+        where('uid_submitted', '==', uid.trim()),
+        where('task_id', '==', currentSpecialTask.id)
+      );
+      const uidAvailabilitySnapshot = await getDocs(uidAvailabilityQuery);
+      
+      if (!uidAvailabilitySnapshot.empty) {
+        const data = uidAvailabilitySnapshot.docs[0].data();
         if (data.user_id === telegramId) {
           // UID used by current user
           return {

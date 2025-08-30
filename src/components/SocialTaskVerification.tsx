@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Users, Link, CheckCircle, XCircle, Loader, AlertCircle, Bot } from 'lucide-react';
+import { Users, CheckCircle, XCircle, AlertTriangle, Clock, RefreshCw, Eye, Shield, Bot, UserCheck, UserX, MessageCircle, Settings, Zap, Activity, Info, BarChart3 } from 'lucide-react';
 import { motion } from 'framer-motion';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/firebase';
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 
 interface SocialTaskVerificationProps {
   telegramId: string;
@@ -115,39 +116,28 @@ export default function SocialTaskVerification({
       }
       
       // Method 2: Check through database records
-      const { data: groupMembers, error } = await supabase
-        .from('group_members')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('group_username', groupUsername)
-        .eq('is_active', true)
-        .single();
+      const groupMembersRef = collection(db, 'group_members');
+      const q = query(groupMembersRef, where('user_id', '==', userId), where('group_username', '==', groupUsername), where('is_active', '==', true));
+      const snapshot = await getDocs(q);
       
-      if (error && error.code !== 'PGRST116') {
-        throw error;
-      }
-      
-      if (groupMembers) {
+      if (!snapshot.empty) {
+        const memberData = snapshot.docs[0].data();
         return {
           isMember: true,
-          memberSince: groupMembers.joined_at
+          memberSince: memberData.joined_at
         };
       }
       
       // Method 3: Check through user activities
-      const { data: activities, error: activityError } = await supabase
-        .from('user_activities')
-        .select('*')
-        .eq('user_id', userId)
-        .eq('activity_type', 'group_join')
-        .eq('metadata->>group_username', groupUsername)
-        .order('created_at', { ascending: false })
-        .limit(1);
+      const userActivitiesRef = collection(db, 'user_activities');
+      const activitiesQuery = query(userActivitiesRef, where('user_id', '==', userId), where('activity_type', '==', 'group_join'), where('metadata->>group_username', '==', groupUsername), orderBy('created_at', 'desc'), limit(1));
+      const activitiesSnapshot = await getDocs(activitiesQuery);
       
-      if (activities && activities.length > 0) {
+      if (!activitiesSnapshot.empty) {
+        const activityData = activitiesSnapshot.docs[0].data();
         return {
           isMember: true,
-          memberSince: activities[0].created_at
+          memberSince: activityData.created_at
         };
       }
       
@@ -170,29 +160,22 @@ export default function SocialTaskVerification({
       }
       
       // Check if referral code exists and belongs to user
-      const { data: referralData, error: referralError } = await supabase
-        .from('referrals')
-        .select('*')
-        .eq('referral_code', referralCode)
-        .eq('referrer_id', userId)
-        .single();
+      const referralsRef = collection(db, 'referrals');
+      const q = query(referralsRef, where('referral_code', '==', referralCode), where('referrer_id', '==', userId));
+      const snapshot = await getDocs(q);
       
-      if (referralError || !referralData) {
+      if (snapshot.empty) {
         return { isValid: false, usageCount: 0, details: 'Referral code not found or invalid' };
       }
       
+      const referralData = snapshot.docs[0].data();
+      
       // Check referral link usage count
-      const { data: usageData, error: usageError } = await supabase
-        .from('referral_usage')
-        .select('*')
-        .eq('referral_code', referralCode)
-        .eq('referrer_id', userId);
+      const usageRef = collection(db, 'referral_usage');
+      const usageQuery = query(usageRef, where('referral_code', '==', referralCode), where('referrer_id', '==', userId));
+      const usageSnapshot = await getDocs(usageQuery);
       
-      if (usageError) {
-        console.error('Usage check error:', usageError);
-      }
-      
-      const usageCount = usageData?.length || 0;
+      const usageCount = usageSnapshot.size;
       
       // Validate referral link (check if it's not expired, rate limited, etc.)
       const isValid = validateReferralLink(referralData, usageCount);
@@ -390,7 +373,7 @@ export default function SocialTaskVerification({
         >
           {isVerifying ? (
             <div className="flex items-center gap-2">
-              <Loader className="w-4 h-4 animate-spin" />
+              <RefreshCw className="w-4 h-4 animate-spin" />
               Verifying...
             </div>
           ) : (
@@ -411,7 +394,7 @@ export default function SocialTaskVerification({
       {/* Information */}
       <div className="mt-4 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
         <div className="flex items-center gap-2 mb-2">
-          <AlertCircle className="w-4 h-4 text-blue-400" />
+          <Info className="w-4 h-4 text-blue-400" />
           <span className="text-sm font-medium text-blue-400">How verification works</span>
         </div>
         <ul className="text-xs text-gray-300 space-y-1">

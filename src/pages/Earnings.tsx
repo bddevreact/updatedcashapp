@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { TrendingUp, Calendar, BarChart3, Target, DollarSign, RefreshCw, Activity, Zap } from 'lucide-react';
-import { useUserStore } from '../store/userStore';
+import { useFirebaseUserStore } from '../store/firebaseUserStore';
 import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/firebase';
+import { collection, query, orderBy, limit, getDocs, where } from 'firebase/firestore';
 import EarningsAnalytics from '../components/EarningsAnalytics';
 
 interface Earning {
@@ -24,7 +25,7 @@ interface UserStats {
 }
 
 export default function Earnings() {
-  const { balance, stats, addNotification, telegramId } = useUserStore();
+  const { balance, stats, addNotification, telegramId } = useFirebaseUserStore();
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [liveEarnings, setLiveEarnings] = useState<any[]>([]);
@@ -87,35 +88,60 @@ export default function Earnings() {
 
     try {
       // Use the user_earnings_summary view for better performance
-      const { data: userData, error: userError } = await supabase
-        .from('user_earnings_summary')
-        .select('*')
-        .eq('telegram_id', telegramId)
-        .single();
+      try {
+        const userDataQuery = query(
+          collection(db, 'user_earnings_summary'),
+          where('telegram_id', '==', telegramId)
+        );
+        const userDataSnapshot = await getDocs(userDataQuery);
+        const userData = userDataSnapshot.docs[0]?.data();
 
-      if (userError) {
-        // Fallback to direct users table query if view doesn't exist
-        const { data: fallbackData, error: fallbackError } = await supabase
-          .from('users')
-          .select('total_earnings, total_referrals, balance, level, experience_points')
-          .eq('telegram_id', telegramId)
-          .single();
-
-        if (fallbackError) {
-          console.error('Error loading user stats:', fallbackError);
-          // Set default values if both queries fail
+        if (userData) {
           setUserStats({
-            total_earnings: 0,
-            total_referrals: 0,
-            balance: 0,
-            level: 1,
-            experience_points: 0
+            total_earnings: userData.total_earnings || 0,
+            total_referrals: userData.total_referrals || 0,
+            balance: userData.balance || 0,
+            level: userData.level || 1,
+            experience_points: userData.experience_points || 0
           });
         } else {
-          setUserStats(fallbackData);
+          // Fallback to direct users table query if view doesn't exist
+          const fallbackQuery = query(
+            collection(db, 'users'),
+            where('telegram_id', '==', telegramId)
+          );
+          const fallbackSnapshot = await getDocs(fallbackQuery);
+          const fallbackData = fallbackSnapshot.docs[0]?.data();
+
+          if (fallbackData) {
+            setUserStats({
+              total_earnings: fallbackData.total_earnings || 0,
+              total_referrals: fallbackData.total_referrals || 0,
+              balance: fallbackData.balance || 0,
+              level: fallbackData.level || 1,
+              experience_points: fallbackData.experience_points || 0
+            });
+          } else {
+            // Set default values if no data found
+            setUserStats({
+              total_earnings: 0,
+              total_referrals: 0,
+              balance: 0,
+              level: 1,
+              experience_points: 0
+            });
+          }
         }
-      } else {
-        setUserStats(userData);
+      } catch (fallbackError) {
+        console.error('Error in fallback query:', fallbackError);
+        // Set default values if fallback query fails
+        setUserStats({
+          total_earnings: 0,
+          total_referrals: 0,
+          balance: 0,
+          level: 1,
+          experience_points: 0
+        });
       }
 
       // Set loading to false after stats are loaded
@@ -143,30 +169,52 @@ export default function Earnings() {
 
     try {
       // Try to use the recent_earnings view first
-      const { data: recentEarningsData, error: recentError } = await supabase
-        .from('recent_earnings')
-        .select('*')
-        .eq('user_id', telegramId)
-        .order('created_at', { ascending: false })
-        .limit(50);
+      try {
+        const recentEarningsQuery = query(
+          collection(db, 'recent_earnings'),
+          where('user_id', '==', telegramId),
+          orderBy('created_at', 'desc'),
+          limit(50)
+        );
+        const recentEarningsSnapshot = await getDocs(recentEarningsQuery);
+        const recentEarningsData = recentEarningsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      if (recentError) {
+        // Use data from the view
+        const earningsHistory = recentEarningsData?.map((earning: any) => ({
+          id: earning.id,
+          type: earning.source || 'task',
+          amount: earning.amount || 0,
+          time: formatTimeAgo(new Date(earning.created_at)),
+          isLive: earning.status === 'LIVE',
+          created_at: earning.created_at
+        })) || [];
+
+        setEarningsHistory(earningsHistory);
+
+        // Filter live earnings from view data
+        const liveEarnings = recentEarningsData?.filter((e: any) => 
+          e.status === 'LIVE'
+        ).map((earning: any) => ({
+          id: earning.id,
+          type: earning.source || 'task',
+          amount: earning.amount || 0,
+          time: formatTimeAgo(new Date(earning.created_at)),
+          isLive: true,
+          created_at: earning.created_at
+        })) || [];
+
+        setLiveEarnings(liveEarnings);
+
+      } catch (error) {
         // Fallback to direct earnings table query
-        const { data: earnings, error: earningsError } = await supabase
-          .from('earnings')
-          .select('*')
-          .eq('user_id', telegramId)
-          .order('created_at', { ascending: false })
-          .limit(50);
-
-        if (earningsError) {
-          console.error('Error loading earnings:', earningsError);
-          // Set empty arrays on error
-          setEarningsHistory([]);
-          setLiveEarnings([]);
-          setIsLoading(false);
-          return;
-        }
+        const earningsQuery = query(
+          collection(db, 'earnings'),
+          where('user_id', '==', telegramId),
+          orderBy('created_at', 'desc'),
+          limit(50)
+        );
+        const earningsSnapshot = await getDocs(earningsQuery);
+        const earnings = earningsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
         // Transform earnings data
         const earningsHistory = earnings?.map((earning: any) => ({
@@ -194,32 +242,6 @@ export default function Earnings() {
         })) || [];
 
         setLiveEarnings(recentEarnings);
-      } else {
-        // Use data from the view
-        const earningsHistory = recentEarningsData?.map((earning: any) => ({
-          id: earning.id,
-          type: earning.source || 'task',
-          amount: earning.amount || 0,
-          time: formatTimeAgo(new Date(earning.created_at)),
-          isLive: earning.status === 'LIVE',
-          created_at: earning.created_at
-        })) || [];
-
-        setEarningsHistory(earningsHistory);
-
-        // Filter live earnings from view data
-        const liveEarnings = recentEarningsData?.filter((e: any) => 
-          e.status === 'LIVE'
-        ).map((earning: any) => ({
-          id: earning.id,
-          type: earning.source || 'task',
-          amount: earning.amount || 0,
-          time: formatTimeAgo(new Date(earning.created_at)),
-          isLive: true,
-          created_at: earning.created_at
-        })) || [];
-
-        setLiveEarnings(liveEarnings);
       }
 
       setLastUpdate(new Date());

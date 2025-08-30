@@ -1,0 +1,24 @@
+# Alternative Railway Commands (More Reliable)
+
+# Option 1: Simple Build Command (Recommended)
+Build Command:
+pip install -r requirements-railway.txt
+
+# Option 2: Clean Install Build Command
+Build Command:
+pip uninstall supabase supabase-py -y && pip install -r requirements-railway.txt
+
+# Option 3: Force Install Build Command
+Build Command:
+pip install --upgrade --force-reinstall -r requirements-railway.txt
+
+# Option 4: Most Reliable Build Command
+Build Command:
+pip install --upgrade pip && pip install -r requirements-railway.txt
+
+# Start Command (Same for all options):
+Start Command:
+python bot_enhanced_referral.py
+
+# Choose the build command that works best for your Railway deployment
+# Start with Option 1 (simplest) and try others if needed

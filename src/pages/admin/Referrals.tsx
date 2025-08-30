@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Target, Search, Filter, CheckCircle, XCircle, Eye, DollarSign, TrendingUp, Users, BarChart3, Shield, Activity, Info, Link, UserCheck, UserX, RefreshCw, Zap, Award, Calendar, Globe } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { db } from '../../lib/firebase';
+import { collection, query, orderBy, limit, getDocs, where, doc, updateDoc, deleteDoc, serverTimestamp, addDoc, getDoc } from 'firebase/firestore';
 import { motion } from 'framer-motion';
 
 interface Referral {
@@ -52,6 +53,28 @@ interface EnhancedStats {
   conversionRate: number;
 }
 
+interface FirebaseReferralData {
+  id: string;
+  created_at?: string;
+  status?: string;
+  referral_bonus?: number;
+  [key: string]: any;
+}
+
+interface FirebaseCodeData {
+  id: string;
+  total_clicks?: number;
+  total_conversions?: number;
+  is_active?: boolean;
+  [key: string]: any;
+}
+
+interface FirebaseVerificationData {
+  id: string;
+  status?: string;
+  [key: string]: any;
+}
+
 export default function AdminReferrals() {
   const [referrals, setReferrals] = useState<Referral[]>([]);
   const [referralCodes, setReferralCodes] = useState<ReferralCode[]>([]);
@@ -100,17 +123,49 @@ export default function AdminReferrals() {
 
   const loadReferrals = async () => {
     try {
-      const { data, error } = await supabase
-        .from('referrals')
-        .select(`
-          *,
-          referrer:users!referrals_referrer_id_fkey(first_name, username, referral_code),
-          referred:users!referrals_referred_id_fkey(first_name, username)
-        `)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setReferrals(data || []);
+      const referralsQuery = query(
+        collection(db, 'referrals'),
+        orderBy('created_at', 'desc')
+      );
+      const referralsSnapshot = await getDocs(referralsQuery);
+      const referralsData = referralsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Load user data for each referral
+      const referralsWithUsers = await Promise.all(
+        referralsData.map(async (referral: any) => {
+          let referrerData = null;
+          let referredData = null;
+          
+          if (referral.referrer_id) {
+            const referrerDoc = await getDoc(doc(db, 'users', referral.referrer_id));
+            if (referrerDoc.exists()) {
+              referrerData = referrerDoc.data();
+            }
+          }
+          
+          if (referral.referred_id) {
+            const referredDoc = await getDoc(doc(db, 'users', referral.referred_id));
+            if (referredDoc.exists()) {
+              referredData = referredDoc.data();
+            }
+          }
+          
+          return {
+            ...referral,
+            referrer: referrerData ? {
+              first_name: referrerData.first_name,
+              username: referrerData.username,
+              referral_code: referrerData.referral_code
+            } : null,
+            referred: referredData ? {
+              first_name: referredData.first_name,
+              username: referredData.username
+            } : null
+          };
+        })
+      );
+      
+      setReferrals(referralsWithUsers);
     } catch (error) {
       console.error('Error loading referrals:', error);
     }
@@ -118,16 +173,30 @@ export default function AdminReferrals() {
 
   const loadReferralCodes = async () => {
     try {
-      const { data, error } = await supabase
-        .from('referral_codes')
-        .select(`
-          *,
-          user:users!referral_codes_user_id_fkey(first_name, username)
-        `)
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setReferralCodes(data || []);
+      const codesSnapshot = await getDocs(collection(db, 'referralCodes'));
+      const codesData = codesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Load user data for each code
+      const codesWithUsers = await Promise.all(
+        codesData.map(async (code: any) => {
+          if (code.user_id) {
+            const userDoc = await getDoc(doc(db, 'users', code.user_id));
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              return {
+                ...code,
+                user: {
+                  first_name: userData.first_name,
+                  username: userData.username
+                }
+              };
+            }
+          }
+          return code;
+        })
+      );
+      
+      setReferralCodes(codesWithUsers);
     } catch (error) {
       console.error('Error loading referral codes:', error);
     }
@@ -136,27 +205,16 @@ export default function AdminReferrals() {
   const loadEnhancedStats = async () => {
     try {
       // Load basic referral stats
-      const { data: referralsData, error: referralsError } = await supabase
-        .from('referrals')
-        .select('*');
-
-      if (referralsError) throw referralsError;
+      const referralsSnapshot = await getDocs(collection(db, 'referrals'));
+      const referralsData = referralsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as FirebaseReferralData[];
 
       // Load referral codes stats
-      const { data: codesData, error: codesError } = await supabase
-        .from('referral_codes')
-        .select('*');
-
-      if (codesError) throw codesError;
+      const codesSnapshot = await getDocs(collection(db, 'referralCodes'));
+      const codesData = codesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as FirebaseCodeData[];
 
       // Load group membership verifications
-      const { data: verificationsData, error: verificationsError } = await supabase
-        .from('group_membership_verification')
-        .select('*');
-
-      if (verificationsError) {
-        console.warn('Group membership verification table not found:', verificationsError);
-      }
+      const verificationsSnapshot = await getDocs(collection(db, 'group_membership_verification'));
+      const verificationsData = verificationsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as FirebaseVerificationData[];
 
       // Calculate period-based stats
       const now = new Date();
@@ -164,9 +222,9 @@ export default function AdminReferrals() {
       const weekAgo = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
       const monthAgo = new Date(today.getTime() - 30 * 24 * 60 * 60 * 1000);
 
-      const todayReferrals = referralsData?.filter(r => new Date(r.created_at) >= today).length || 0;
-      const weekReferrals = referralsData?.filter(r => new Date(r.created_at) >= weekAgo).length || 0;
-      const monthReferrals = referralsData?.filter(r => new Date(r.created_at) >= monthAgo).length || 0;
+      const todayReferrals = referralsData?.filter(r => r.created_at && new Date(r.created_at) >= today).length || 0;
+      const weekReferrals = referralsData?.filter(r => r.created_at && new Date(r.created_at) >= weekAgo).length || 0;
+      const monthReferrals = referralsData?.filter(r => r.created_at && new Date(r.created_at) >= monthAgo).length || 0;
 
       // Calculate conversion rate
       const totalClicks = codesData?.reduce((sum, code) => sum + (code.total_clicks || 0), 0) || 0;
@@ -208,15 +266,11 @@ export default function AdminReferrals() {
 
   const handleStatusUpdate = async (referralId: string, newStatus: 'verified' | 'rejected') => {
     try {
-      const { error } = await supabase
-        .from('referrals')
-        .update({ 
-          status: newStatus, 
-          verification_date: new Date().toISOString() 
-        })
-        .eq('id', referralId);
-
-      if (error) throw error;
+      await updateDoc(doc(db, 'referrals', referralId), {
+        status: newStatus,
+        verification_date: new Date().toISOString(),
+        updated_at: serverTimestamp()
+      });
       
       // Reload data
       loadAllData();
@@ -227,12 +281,10 @@ export default function AdminReferrals() {
 
   const handleReferralCodeToggle = async (codeId: string, isActive: boolean) => {
     try {
-      const { error } = await supabase
-        .from('referral_codes')
-        .update({ is_active: isActive })
-        .eq('id', codeId);
-
-      if (error) throw error;
+      await updateDoc(doc(db, 'referralCodes', codeId), {
+        is_active: isActive,
+        updated_at: serverTimestamp()
+      });
       
       // Reload data
       loadAllData();

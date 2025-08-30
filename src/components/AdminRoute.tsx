@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { Navigate, useLocation } from 'react-router-dom';
-import { supabase } from '../lib/supabase';
+import { useAdminAuth } from '../hooks/useAdminAuth';
 import { motion } from 'framer-motion';
 import { Shield, Loader2 } from 'lucide-react';
 
@@ -12,35 +12,16 @@ export default function AdminRoute({ children }: Props) {
   const [loading, setLoading] = useState(true);
   const [isAdmin, setIsAdmin] = useState(false);
   const location = useLocation();
+  const { user, isAdmin: authIsAdmin, loading: authLoading } = useAdminAuth();
 
   useEffect(() => {
-    checkAdmin();
-  }, []);
-
-  const checkAdmin = async () => {
-    try {
-      const { data: { user } } = await supabase.auth.getUser();
-      
-      if (!user) {
-        setIsAdmin(false);
-        setLoading(false);
-        return;
-      }
-
-      const { data: profile, error } = await supabase
-        .from('admin_users')
-        .select('role')
-        .eq('user_id', user.id)
-        .single();
-
-      // Fix: Allow any admin role (admin, super_admin, moderator)
-      setIsAdmin(!error && ['admin', 'super_admin', 'moderator'].includes(profile?.role));
-    } catch (error) {
-      setIsAdmin(false);
-    } finally {
+    console.log('🔐 AdminRoute useEffect:', { authLoading, authIsAdmin, user: user?.email });
+    if (!authLoading) {
+      setIsAdmin(authIsAdmin);
       setLoading(false);
+      console.log('🔐 AdminRoute state updated:', { isAdmin: authIsAdmin });
     }
-  };
+  }, [authLoading, authIsAdmin, user]);
 
   if (loading) {
     return (
@@ -85,7 +66,7 @@ export default function AdminRoute({ children }: Props) {
   }
 
   if (!isAdmin) {
-    return <Navigate to="/admin" state={{ from: location }} replace />;
+    return <Navigate to="/admin" replace />;
   }
 
   return <>{children}</>;

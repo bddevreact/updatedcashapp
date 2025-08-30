@@ -1,8 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Bell, X, Check, AlertTriangle, Info, CheckCircle, ExternalLink, RefreshCw } from 'lucide-react';
-import { useUserStore } from '../store/userStore';
-import { getUserNotifications, markNotificationAsRead, clearUserNotifications } from '../lib/notifications';
+import { Bell, X, CheckCircle, AlertCircle, Info, Clock, Trash2, Eye, EyeOff } from 'lucide-react';
+import { useFirebaseUserStore } from '../store/firebaseUserStore';
+import { getUserNotifications, markNotificationAsRead } from '../lib/notifications';
 
 interface NotificationCenterProps {
   userId: string;
@@ -134,12 +134,9 @@ export default function NotificationCenter({ userId }: NotificationCenterProps) 
 
   const clearNotifications = async () => {
     try {
-      // Clear notifications from database
-      await clearUserNotifications(userId);
-      
-      // Clear local state
-    setNotifications([]);
-    setUnreadCount(0);
+      // Clear local state only (database clearing not implemented)
+      setNotifications([]);
+      setUnreadCount(0);
     } catch (error) {
       console.error('Error clearing notifications:', error);
     }
@@ -150,9 +147,9 @@ export default function NotificationCenter({ userId }: NotificationCenterProps) 
       case 'success':
         return <CheckCircle className="w-5 h-5 text-green-400" />;
       case 'warning':
-        return <AlertTriangle className="w-5 h-5 text-yellow-400" />;
+        return <AlertCircle className="w-5 h-5 text-yellow-400" />;
       case 'error':
-        return <AlertTriangle className="w-5 h-5 text-red-400" />;
+        return <AlertCircle className="w-5 h-5 text-red-400" />;
       default:
         return <Info className="w-5 h-5 text-blue-400" />;
     }
@@ -225,7 +222,7 @@ export default function NotificationCenter({ userId }: NotificationCenterProps) 
                     className="p-1 text-gray-400 hover:text-white transition-colors duration-200"
                     title="Refresh notifications"
                   >
-                    <RefreshCw className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
+                    <Clock className={`w-4 h-4 ${isLoading ? 'animate-spin' : ''}`} />
                   </button>
                 <button
                   onClick={() => setIsOpen(false)}
@@ -327,7 +324,7 @@ export default function NotificationCenter({ userId }: NotificationCenterProps) 
                                         className="text-xs text-gold hover:text-yellow-400 flex items-center gap-1"
                                       >
                                         {notification.action_text || 'View'}
-                                        <ExternalLink className="w-3 h-3" />
+                                        <Eye className="w-3 h-3" />
                                       </a>
                                     )}
                                   </div>

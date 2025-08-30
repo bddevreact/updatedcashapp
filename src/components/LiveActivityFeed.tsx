@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Users, CheckSquare, DollarSign, TrendingUp, Gift, Clock, Zap, Eye, AlertCircle, RefreshCw } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { Activity, Clock, TrendingUp, Users, DollarSign, CheckCircle, AlertCircle, RefreshCw, Zap } from 'lucide-react';
+import { db } from '../lib/firebase';
+import { collection, query, where, getDocs, orderBy, limit, serverTimestamp } from 'firebase/firestore';
 
 interface LiveActivity {
   id: string;
@@ -37,26 +38,21 @@ export default function LiveActivityFeed({ maxItems = 15, autoScroll = true }: L
       const newActivities: LiveActivity[] = [];
 
       // 1. Load recent task completions
-      const { data: taskCompletions, error: taskError } = await supabase
-        .from('task_completions')
-        .select(`
-          *,
-          task_templates(title, reward, type),
-          users(first_name, username)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(10);
+      const taskCompletionsRef = collection(db, 'task_completions');
+      const taskQuery = query(taskCompletionsRef, orderBy('created_at', 'desc'), limit(10));
+      const taskSnapshot = await getDocs(taskQuery);
 
-      if (!taskError && taskCompletions) {
-        taskCompletions.forEach(task => {
+      if (!taskSnapshot.empty) {
+        taskSnapshot.forEach(task => {
+          const taskData = task.data();
           newActivities.push({
             id: `task_${task.id}`,
             type: 'task',
             title: 'Task Completed',
-            description: `${task.users?.first_name || 'User'} completed ${task.task_templates?.title || 'task'}`,
-            amount: task.task_templates?.reward || 0,
-            timestamp: new Date(task.created_at),
-            user: task.users?.first_name || task.users?.username || 'Unknown',
+            description: `${taskData.users?.first_name || 'User'} completed ${taskData.task_templates?.title || 'task'}`,
+            amount: taskData.task_templates?.reward || 0,
+            timestamp: new Date(taskData.created_at),
+            user: taskData.users?.first_name || taskData.users?.username || 'Unknown',
             isLive: true,
             status: 'completed'
           });
@@ -64,50 +60,44 @@ export default function LiveActivityFeed({ maxItems = 15, autoScroll = true }: L
       }
 
       // 2. Load recent withdrawals
-      const { data: withdrawals, error: withdrawalError } = await supabase
-        .from('withdrawal_requests')
-        .select(`
-          *,
-          users(first_name, username)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(10);
+      const withdrawalsRef = collection(db, 'withdrawal_requests');
+      const withdrawalQuery = query(withdrawalsRef, orderBy('created_at', 'desc'), limit(10));
+      const withdrawalSnapshot = await getDocs(withdrawalQuery);
 
-      if (!withdrawalError && withdrawals) {
-        withdrawals.forEach(withdrawal => {
+      if (!withdrawalSnapshot.empty) {
+        withdrawalSnapshot.forEach(withdrawal => {
+          const withdrawalData = withdrawal.data();
           newActivities.push({
             id: `withdrawal_${withdrawal.id}`,
             type: 'withdrawal',
             title: 'Withdrawal Request',
-            description: `${withdrawal.users?.first_name || 'User'} requested withdrawal via ${withdrawal.method}`,
-            amount: withdrawal.amount,
-            timestamp: new Date(withdrawal.created_at),
-            user: withdrawal.users?.first_name || withdrawal.users?.username || 'Unknown',
-            isLive: withdrawal.status === 'pending',
-            status: withdrawal.status
+            description: `${withdrawalData.users?.first_name || 'User'} requested withdrawal via ${withdrawalData.method}`,
+            amount: withdrawalData.amount,
+            timestamp: new Date(withdrawalData.created_at),
+            user: withdrawalData.users?.first_name || withdrawalData.users?.username || 'Unknown',
+            isLive: withdrawalData.status === 'pending',
+            status: withdrawalData.status
           });
         });
       }
 
       // 3. Load recent deposits (from user_activities)
-      const { data: deposits, error: depositError } = await supabase
-        .from('user_activities')
-        .select('*')
-        .eq('activity_type', 'deposit_request')
-        .order('created_at', { ascending: false })
-        .limit(10);
+      const depositsRef = collection(db, 'user_activities');
+      const depositQuery = query(depositsRef, where('activity_type', '==', 'deposit_request'), orderBy('created_at', 'desc'), limit(10));
+      const depositSnapshot = await getDocs(depositQuery);
 
-      if (!depositError && deposits) {
-        deposits.forEach(deposit => {
+      if (!depositSnapshot.empty) {
+        depositSnapshot.forEach(deposit => {
+          const depositData = deposit.data();
           try {
-            const depositData = JSON.parse(deposit.activity_data || '{}');
+            const parsedData = JSON.parse(depositData.activity_data || '{}');
             newActivities.push({
               id: `deposit_${deposit.id}`,
               type: 'deposit',
               title: 'Deposit Request',
-              description: `Deposit request via ${depositData.method || 'unknown method'}`,
-              amount: depositData.amount || 0,
-              timestamp: new Date(deposit.created_at),
+              description: `Deposit request via ${parsedData.method || 'unknown method'}`,
+              amount: parsedData.amount || 0,
+              timestamp: new Date(depositData.created_at),
               user: 'User', // We'll need to get user info separately
               isLive: true,
               status: 'pending'
@@ -119,54 +109,45 @@ export default function LiveActivityFeed({ maxItems = 15, autoScroll = true }: L
       }
 
       // 4. Load special task submissions
-      const { data: specialTasks, error: specialError } = await supabase
-        .from('special_task_submissions')
-        .select(`
-          *,
-          task_templates(title, reward_amount),
-          users(first_name, username)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(10);
+      const specialTasksRef = collection(db, 'special_task_submissions');
+      const specialQuery = query(specialTasksRef, orderBy('created_at', 'desc'), limit(10));
+      const specialSnapshot = await getDocs(specialQuery);
 
-      if (!specialError && specialTasks) {
-        specialTasks.forEach(task => {
+      if (!specialSnapshot.empty) {
+        specialSnapshot.forEach(task => {
+          const taskData = task.data();
           newActivities.push({
             id: `special_${task.id}`,
             type: 'special_task',
             title: 'Special Task Submitted',
-            description: `${task.users?.first_name || 'User'} submitted UID for ${task.task_templates?.title || 'special task'}`,
-            amount: task.task_templates?.reward_amount || 0,
-            timestamp: new Date(task.created_at),
-            user: task.users?.first_name || task.users?.username || 'Unknown',
-            isLive: task.status === 'pending',
-            status: task.status
+            description: `${taskData.users?.first_name || 'User'} submitted UID for ${taskData.task_templates?.title || 'special task'}`,
+            amount: taskData.task_templates?.reward_amount || 0,
+            timestamp: new Date(taskData.created_at),
+            user: taskData.users?.first_name || taskData.users?.username || 'Unknown',
+            isLive: taskData.status === 'pending',
+            status: taskData.status
           });
         });
       }
 
       // 5. Load referral activities (from trading_platform_referrals)
-      const { data: referrals, error: referralError } = await supabase
-        .from('trading_platform_referrals')
-        .select(`
-          *,
-          users(first_name, username)
-        `)
-        .order('created_at', { ascending: false })
-        .limit(10);
+      const referralsRef = collection(db, 'trading_platform_referrals');
+      const referralQuery = query(referralsRef, orderBy('created_at', 'desc'), limit(10));
+      const referralSnapshot = await getDocs(referralQuery);
 
-      if (!referralError && referrals) {
-        referrals.forEach(referral => {
+      if (!referralSnapshot.empty) {
+        referralSnapshot.forEach(referral => {
+          const referralData = referral.data();
           newActivities.push({
             id: `referral_${referral.id}`,
             type: 'referral',
             title: 'Trading Referral',
-            description: `${referral.users?.first_name || 'User'} completed ${referral.platform_name} referral`,
-            amount: referral.reward_amount || 0,
-            timestamp: new Date(referral.created_at),
-            user: referral.users?.first_name || referral.users?.username || 'Unknown',
-            isLive: referral.status === 'pending',
-            status: referral.status
+            description: `${referralData.users?.first_name || 'User'} completed ${referralData.platform_name} referral`,
+            amount: referralData.reward_amount || 0,
+            timestamp: new Date(referralData.created_at),
+            user: referralData.users?.first_name || referralData.users?.username || 'Unknown',
+            isLive: referralData.status === 'pending',
+            status: referralData.status
           });
         });
       }
@@ -219,9 +200,9 @@ export default function LiveActivityFeed({ maxItems = 15, autoScroll = true }: L
       case 'referral':
         return <Users className="w-4 h-4 text-blue-400" />;
       case 'task':
-        return <CheckSquare className="w-4 h-4 text-green-400" />;
+        return <CheckCircle className="w-4 h-4 text-green-400" />;
       case 'bonus':
-        return <Gift className="w-4 h-4 text-yellow-400" />;
+        return <Activity className="w-4 h-4 text-yellow-400" />;
       case 'level_up':
         return <TrendingUp className="w-4 h-4 text-purple-400" />;
       case 'withdrawal':
@@ -229,9 +210,9 @@ export default function LiveActivityFeed({ maxItems = 15, autoScroll = true }: L
       case 'deposit':
         return <DollarSign className="w-4 h-4 text-green-400" />;
       case 'special_task':
-        return <Eye className="w-4 h-4 text-orange-400" />;
+        return <Zap className="w-4 h-4 text-orange-400" />;
       default:
-        return <Zap className="w-4 h-4 text-gray-400" />;
+        return <Activity className="w-4 h-4 text-gray-400" />;
     }
   };
 

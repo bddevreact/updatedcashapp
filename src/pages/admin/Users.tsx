@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { Users, Search, Filter, MoreVertical, Eye, Edit, Trash2, UserPlus, Download, Plus, DollarSign, X } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { db } from '../../lib/firebase';
+import { collection, query, orderBy, limit, getDocs, where, doc, updateDoc, deleteDoc, serverTimestamp, addDoc } from 'firebase/firestore';
 import { motion } from 'framer-motion';
 
 interface User {
@@ -11,13 +12,12 @@ interface User {
   last_name: string;
   balance: number;
   level: number;
-  referrals_count: number;
+  total_referrals: number; // Fixed: use correct field name
   total_earnings: number;
   last_active: string;
   created_at: string;
   referral_code?: string;
   referred_by?: number;
-  total_referrals?: number;
   is_active?: boolean;
 }
 
@@ -49,13 +49,13 @@ export default function AdminUsers() {
   const loadUsers = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('users')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (error) throw error;
-      setUsers(data || []);
+          const usersQuery = query(
+      collection(db, 'users'),
+      orderBy('created_at', 'desc')
+    );
+    const usersSnapshot = await getDocs(usersQuery);
+    const usersData = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+    setUsers(usersData);
     } catch (error) {
       console.error('Error loading users:', error);
     } finally {
@@ -66,25 +66,16 @@ export default function AdminUsers() {
   const loadEnhancedStats = async () => {
     try {
       // Load users stats
-      const { data: usersData, error: usersError } = await supabase
-        .from('users')
-        .select('*');
-
-      if (usersError) throw usersError;
+      const usersSnapshot = await getDocs(collection(db, 'users'));
+      const usersData = usersSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       // Load referrals stats
-      const { data: referralsData, error: referralsError } = await supabase
-        .from('referrals')
-        .select('*');
-
-      if (referralsError) throw referralsError;
+      const referralsSnapshot = await getDocs(collection(db, 'referrals'));
+      const referralsData = referralsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       // Load referral codes stats
-      const { data: codesData, error: codesError } = await supabase
-        .from('referral_codes')
-        .select('*');
-
-      if (codesError) throw codesError;
+      const codesSnapshot = await getDocs(collection(db, 'referralCodes'));
+      const codesData = codesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       // Calculate stats
       const totalUsers = usersData?.length || 0;
@@ -104,48 +95,6 @@ export default function AdminUsers() {
       });
     } catch (error) {
       console.error('Error loading enhanced stats:', error);
-    }
-  };
-
-  // Function to update user data when referral is completed
-  const updateUserOnReferralComplete = async (referrerId: number, referredId: number) => {
-    try {
-      // Update referrer's referral count and balance
-      const { data: referrer, error: referrerError } = await supabase
-        .from('users')
-        .select('referrals_count, balance')
-        .eq('telegram_id', referrerId)
-        .single();
-
-      if (referrerError) throw referrerError;
-
-      const newReferralCount = (referrer.referrals_count || 0) + 1;
-      const newBalance = (referrer.balance || 0) + 2; // ৳2 reward
-
-      // Update referrer
-      await supabase
-        .from('users')
-        .update({
-          referrals_count: newReferralCount,
-          balance: newBalance
-        })
-        .eq('telegram_id', referrerId);
-
-      // Update referred user's referred_by field
-      await supabase
-        .from('users')
-        .update({
-          referred_by: referrerId
-        })
-        .eq('telegram_id', referredId);
-
-      // Reload data
-      loadUsers();
-      loadEnhancedStats();
-
-      console.log(`✅ User data updated for referral: ${referrerId} → ${referredId}`);
-    } catch (error) {
-      console.error('Error updating user data on referral complete:', error);
     }
   };
 
@@ -178,12 +127,10 @@ export default function AdminUsers() {
       const balanceChange = newBalance - oldBalance;
 
       // Update user balance
-      const { error } = await supabase
-        .from('users')
-        .update({ balance: newBalance })
-        .eq('id', selectedUser.id);
-
-      if (error) throw error;
+      await updateDoc(doc(db, 'users', selectedUser.id), {
+        balance: newBalance,
+        updated_at: serverTimestamp()
+      });
 
       // Log the balance change
       await logBalanceChange(Number(selectedUser.id), oldBalance, newBalance, balanceChangeReason);
@@ -208,20 +155,18 @@ export default function AdminUsers() {
 
   const logBalanceChange = async (userId: number, oldBalance: number, newBalance: number, reason: string) => {
     try {
-      await supabase
-        .from('user_activities')
-        .insert([{
-          user_id: userId,
-          activity_type: 'balance_modified',
-          details: {
-            old_balance: oldBalance,
-            new_balance: newBalance,
-            change_amount: newBalance - oldBalance,
-            reason: reason,
-            modified_by: 'admin'
-          },
-          created_at: new Date().toISOString()
-        }]);
+      await addDoc(collection(db, 'user_activities'), {
+        user_id: userId,
+        activity_type: 'balance_modified',
+        details: {
+          old_balance: oldBalance,
+          new_balance: newBalance,
+          change_amount: newBalance - oldBalance,
+          reason: reason,
+          modified_by: 'admin'
+        },
+        created_at: serverTimestamp()
+      });
     } catch (error) {
       console.error('Error logging balance change:', error);
     }
@@ -392,7 +337,7 @@ export default function AdminUsers() {
             transition={{ duration: 0.5, delay: 0.6 }}
           >
             <div className="text-3xl font-bold text-white">
-              {users.reduce((sum, user) => sum + (user.referrals_count || 0), 0)}
+              {users.reduce((sum, user) => sum + (user.total_referrals || 0), 0)}
             </div>
             <div className="text-gray-400">Total Referrals</div>
           </motion.div>
@@ -521,7 +466,7 @@ export default function AdminUsers() {
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <div className="text-sm font-medium text-white">{user.referrals_count || 0}</div>
+                        <div className="text-sm font-medium text-white">{user.total_referrals || 0}</div>
                         <div className="text-xs text-gray-400">referrals</div>
                         {user.referral_code && (
                           <div className="text-xs text-blue-400 font-mono">Code: {user.referral_code}</div>

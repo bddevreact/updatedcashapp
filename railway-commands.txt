@@ -1,0 +1,5 @@
+Build Command:
+pip uninstall supabase supabase-py -y && pip install -r requirements-railway.txt
+
+Start Command:
+python bot_enhanced_referral.py

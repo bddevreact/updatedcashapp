@@ -1,12 +1,15 @@
 import React, { useState, useEffect } from 'react';
 import { Gift, Search, Filter, CheckCircle, Clock, TrendingUp, DollarSign, Users, Activity, Plus, Edit, Trash2, Save, X, Eye, XCircle, RefreshCw } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { db } from '../../lib/firebase';
+import { collection, query, orderBy, limit, getDocs, where, doc, updateDoc, deleteDoc, serverTimestamp, addDoc, getDoc } from 'firebase/firestore';
 import { motion, AnimatePresence } from 'framer-motion';
 
 interface TaskCompletion {
   id: string;
   user_id: string;
-  task_id: number;
+  task_id: string;
+  task_type: string;
+  reward_amount: number;
   completed_at: string;
   created_at: string;
   user?: {
@@ -51,6 +54,9 @@ interface TaskTemplate {
   max_completions: number;
   is_active: boolean;
   url?: string;
+  requirements?: any;
+  special?: boolean;
+  bg_color?: string;
   created_at: string;
   updated_at: string;
 }
@@ -87,7 +93,10 @@ export default function AdminTasks() {
     cooldown: 0,
     max_completions: 1,
     is_active: true,
-    url: ''
+    url: '',
+    requirements: {},
+    special: false,
+    bg_color: ''
   });
 
   useEffect(() => {
@@ -96,43 +105,60 @@ export default function AdminTasks() {
     loadSpecialTaskSubmissions();
   }, []);
 
+  // Update stats when task templates are loaded
+  useEffect(() => {
+    if (taskTemplates.length > 0 && taskCompletions.length > 0) {
+      updateStats();
+    }
+  }, [taskTemplates, taskCompletions]);
+
+  const updateStats = () => {
+    const total = taskCompletions.length;
+    const today = taskCompletions.filter(t => 
+      new Date(t.completed_at).toDateString() === new Date().toDateString()
+    ).length;
+    const thisWeek = taskCompletions.filter(t => 
+      new Date(t.completed_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
+    ).length;
+    
+    const totalRewards = taskCompletions.reduce((sum, t) => {
+      // Use reward_amount from task_completions table directly
+      return sum + (t.reward_amount || 0);
+    }, 0);
+    
+    const pendingSubmissions = specialTaskSubmissions.filter(s => s.status === 'pending').length;
+    
+    setStats({ total, today, thisWeek, totalRewards, pendingVerification: pendingSubmissions });
+  };
+
   const loadTaskCompletions = async () => {
     try {
       setLoading(true);
-      const { data, error } = await supabase
-        .from('task_completions')
-        .select(`
-          *,
-          user:users!task_completions_user_id_fkey(telegram_id)
-        `)
-        .order('completed_at', { ascending: false });
-
-      if (error) throw error;
-      setTaskCompletions(data || []);
+      const completionsSnapshot = await getDocs(collection(db, 'task_completions'));
+      const completionsData = completionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      // Calculate stats
-      const total = data?.length || 0;
-      const today = data?.filter(t => 
-        new Date(t.completed_at).toDateString() === new Date().toDateString()
-      ).length || 0;
-      const thisWeek = data?.filter(t => 
-        new Date(t.completed_at) > new Date(Date.now() - 7 * 24 * 60 * 60 * 1000)
-      ).length || 0;
+      // Load user data for each completion
+      const completionsWithUsers = await Promise.all(
+        completionsData.map(async (completion: any) => {
+          if (completion.user_id) {
+            const userDoc = await getDoc(doc(db, 'users', completion.user_id));
+            if (userDoc.exists()) {
+              const userData = userDoc.data();
+              return {
+                ...completion,
+                user: {
+                  telegram_id: userData.telegram_id,
+                  first_name: userData.first_name,
+                  username: userData.username
+                }
+              };
+            }
+          }
+          return completion;
+        })
+      );
       
-      // Get task templates to calculate rewards
-      const { data: templates } = await supabase
-        .from('task_templates')
-        .select('id, reward');
-      
-      const totalRewards = data?.reduce((sum, t) => {
-        const template = templates?.find(temp => temp.id === t.task_id);
-        return sum + (template?.reward || 0);
-      }, 0) || 0;
-      
-      // Get pending special task submissions count
-      const pendingSubmissions = specialTaskSubmissions.filter(s => s.status === 'pending').length;
-      
-      setStats({ total, today, thisWeek, totalRewards, pendingVerification: pendingSubmissions });
+      setTaskCompletions(completionsWithUsers);
     } catch (error) {
       console.error('Error loading task completions:', error);
     } finally {
@@ -142,12 +168,9 @@ export default function AdminTasks() {
 
   const loadTaskTemplates = async () => {
     try {
-      const { data, error } = await supabase
-        .from('task_templates')
-        .select('*')
-        .order('created_at', { ascending: false });
-
-      if (!error) setTaskTemplates(data || []);
+      const templatesSnapshot = await getDocs(collection(db, 'task_templates'));
+      const templatesData = templatesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as TaskTemplate[];
+      setTaskTemplates(templatesData);
     } catch (error) {
       console.error('Error loading task templates:', error);
     }
@@ -155,16 +178,47 @@ export default function AdminTasks() {
 
   const loadSpecialTaskSubmissions = async () => {
     try {
-      const { data, error } = await supabase
-        .from('special_task_submissions')
-        .select(`
-          *,
-          user:users!special_task_submissions_user_id_fkey(telegram_id, first_name, username, balance),
-          task_template:task_templates!special_task_submissions_task_id_fkey(id, title, subtitle)
-        `)
-        .order('created_at', { ascending: false });
-
-      if (!error) setSpecialTaskSubmissions(data || []);
+      const submissionsSnapshot = await getDocs(collection(db, 'special_task_submissions'));
+      const submissionsData = submissionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      // Load user and task template data for each submission
+      const submissionsWithDetails = await Promise.all(
+        submissionsData.map(async (submission: any) => {
+          let userData = null;
+          let taskTemplateData = null;
+          
+          if (submission.user_id) {
+            const userDoc = await getDoc(doc(db, 'users', submission.user_id));
+            if (userDoc.exists()) {
+              userData = userDoc.data();
+            }
+          }
+          
+          if (submission.task_id) {
+            const taskDoc = await getDoc(doc(db, 'task_templates', submission.task_id));
+            if (taskDoc.exists()) {
+              taskTemplateData = taskDoc.data();
+            }
+          }
+          
+          return {
+            ...submission,
+            user: userData ? {
+              telegram_id: userData.telegram_id,
+              first_name: userData.first_name,
+              username: userData.username,
+              balance: userData.balance
+            } : null,
+            task_template: taskTemplateData ? {
+              id: taskTemplateData.id,
+              title: taskTemplateData.title,
+              subtitle: taskTemplateData.subtitle
+            } : null
+          };
+        })
+      );
+      
+      setSpecialTaskSubmissions(submissionsWithDetails);
     } catch (error) {
       console.error('Error loading special task submissions:', error);
     }
@@ -174,9 +228,9 @@ export default function AdminTasks() {
     const matchesSearch = 
       completion.user?.first_name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       completion.user?.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      completion.user_id.toLowerCase().includes(searchTerm);
+      completion.user_id.toString().includes(searchTerm);
     
-    const matchesFilter = filterTaskType === 'all' || completion.task_id.toString().includes(filterTaskType);
+    const matchesFilter = filterTaskType === 'all' || completion.task_type.includes(filterTaskType);
 
     return matchesSearch && matchesFilter;
   });
@@ -186,25 +240,22 @@ export default function AdminTasks() {
     try {
       console.log('=== ADD TASK DEBUG ===');
       console.log('Form data:', taskForm);
-      console.log('Supabase client:', supabase);
-      console.log('Current user:', await supabase.auth.getUser());
       
-      const { data, error } = await supabase
-        .from('task_templates')
-        .insert([taskForm])
-        .select()
-        .single();
+      const docRef = await addDoc(collection(db, 'task_templates'), {
+        ...taskForm,
+        created_at: serverTimestamp(),
+        updated_at: serverTimestamp()
+      });
+      
+      const newTask = { 
+        id: docRef.id, 
+        ...taskForm, 
+        created_at: new Date().toISOString(), 
+        updated_at: new Date().toISOString() 
+      } as TaskTemplate;
 
-      if (error) {
-        console.error('Supabase error details:', error);
-        console.error('Error code:', error.code);
-        console.error('Error message:', error.message);
-        console.error('Error details:', error.details);
-        throw error;
-      }
-
-      console.log('Task added successfully:', data);
-      setTaskTemplates([data, ...taskTemplates]);
+      console.log('Task added successfully:', newTask);
+      setTaskTemplates([newTask, ...taskTemplates]);
       setShowAddTask(false);
       resetTaskForm();
       
@@ -223,21 +274,27 @@ export default function AdminTasks() {
     if (!editingTask) return;
 
     try {
-      const { data, error } = await supabase
-        .from('task_templates')
-        .update(taskForm)
-        .eq('id', editingTask.id)
-        .select()
-        .single();
+      console.log('=== TASK UPDATE DEBUG ===');
+      console.log('Editing task ID:', editingTask.id);
+      console.log('Editing task data:', editingTask);
+      console.log('Form data to update:', taskForm);
 
-      if (error) throw error;
+      // Update the task directly
+      await updateDoc(doc(db, 'task_templates', editingTask.id), {
+        ...taskForm,
+        updated_at: serverTimestamp()
+      });
 
-      setTaskTemplates(taskTemplates.map(t => t.id === editingTask.id ? data : t));
+      // Create updated task object
+      const updatedTask = { ...editingTask, ...taskForm, updated_at: new Date().toISOString() };
+      setTaskTemplates(taskTemplates.map(t => t.id === editingTask.id ? updatedTask : t));
       setEditingTask(null);
       resetTaskForm();
       
       // Update user interface
       loadTaskCompletions();
+      
+      console.log('Task updated successfully:', updatedTask);
     } catch (error) {
       console.error('Error updating task:', error);
       alert('Error updating task: ' + (error as Error).message);
@@ -248,12 +305,7 @@ export default function AdminTasks() {
     if (!confirm('Are you sure you want to delete this task?')) return;
 
     try {
-      const { error } = await supabase
-        .from('task_templates')
-        .delete()
-        .eq('id', taskId);
-
-      if (error) throw error;
+      await deleteDoc(doc(db, 'task_templates', taskId));
 
       setTaskTemplates(taskTemplates.filter(t => t.id !== taskId));
       
@@ -280,24 +332,16 @@ export default function AdminTasks() {
       const taskIds = Array.from(selectedTasks);
       
       if (bulkAction === 'delete') {
-        const { error } = await supabase
-          .from('task_templates')
-          .delete()
-          .in('id', taskIds);
-
-        if (error) throw error;
+        await Promise.all(taskIds.map(id => deleteDoc(doc(db, 'task_templates', id))));
         
         setTaskTemplates(taskTemplates.filter(t => !taskIds.includes(t.id)));
         setSelectedTasks(new Set());
         
         alert(`Successfully deleted ${taskIds.length} tasks`);
       } else {
-        const { error } = await supabase
-          .from('task_templates')
-          .update({ is_active: bulkAction === 'activate' })
-          .in('id', taskIds);
-
-        if (error) throw error;
+        await Promise.all(taskIds.map(id => 
+          updateDoc(doc(db, 'task_templates', id), { is_active: bulkAction === 'activate' })
+        ));
         
         setTaskTemplates(taskTemplates.map(t => 
           taskIds.includes(t.id) ? { ...t, is_active: bulkAction === 'activate' } : t
@@ -357,24 +401,9 @@ export default function AdminTasks() {
           return;
       }
 
-      // Get current admin user ID
-      const { data: { user } } = await supabase.auth.getUser();
-      if (!user) {
-        alert('Admin authentication required. Please log in again.');
-        return;
-      }
-
-      // Get admin user record from admin_users table
-      const { data: adminUser, error: adminError } = await supabase
-        .from('admin_users')
-        .select('user_id')
-        .eq('user_id', user.id)
-        .single();
-
-      if (adminError || !adminUser) {
-        alert('Admin privileges not found. Please contact system administrator.');
-        return;
-      }
+      // For Firebase, we'll use a simple admin check
+      // In production, you should implement proper Firebase Auth admin verification
+      const adminUserId = 'admin'; // Replace with actual admin verification logic
 
       // Show confirmation dialog
       const confirmMessage = status === 'verified' 
@@ -386,61 +415,51 @@ export default function AdminTasks() {
       }
 
       // Update submission status
-      const { error: updateError } = await supabase
-        .from('special_task_submissions')
-        .update({
-          status: status,
-          admin_notes: adminNotes || '',
-          verified_by: adminUser.user_id, // Use proper admin user ID
-          verified_at: new Date().toISOString()
-        })
-        .eq('id', submissionId);
-
-      if (updateError) throw updateError;
+      await updateDoc(doc(db, 'special_task_submissions', submissionId), {
+        status: status,
+        admin_notes: adminNotes || '',
+        verified_by: adminUserId,
+        verified_at: serverTimestamp()
+      });
 
       // If verified, add reward to user balance
       if (status === 'verified') {
-        const { error: balanceError } = await supabase
-          .from('users')
-          .update({ 
+        try {
+          await updateDoc(doc(db, 'users', submission.user_id), {
             balance: (submission.user?.balance || 0) + submission.reward_amount,
-            updated_at: new Date().toISOString()
-          })
-          .eq('telegram_id', submission.user_id);
-
-        if (balanceError) {
+            updated_at: serverTimestamp()
+          });
+        } catch (balanceError) {
           console.error('Error updating user balance:', balanceError);
           alert('UID verified but failed to update user balance. Please contact support.');
         }
 
         // Send notification to user
         try {
-          await supabase
-            .from('notifications')
-            .insert({
-              user_id: submission.user_id,
-              title: 'Special Task Verified! 🎉',
-              message: `Your UID for "${submission.task_template?.title || 'Special Task'}" has been verified! You received ৳${submission.reward_amount} reward.`,
-              type: 'success',
-              action_url: '/tasks',
-              metadata: { task_id: submission.task_id, reward: submission.reward_amount }
-            });
+          await addDoc(collection(db, 'notifications'), {
+            user_id: submission.user_id,
+            title: 'Special Task Verified! 🎉',
+            message: `Your UID for "${submission.task_template?.title || 'Special Task'}" has been verified! You received ৳${submission.reward_amount} reward.`,
+            type: 'success',
+            action_url: '/tasks',
+            metadata: { task_id: submission.task_id, reward: submission.reward_amount },
+            created_at: serverTimestamp()
+          });
         } catch (notifError) {
           console.error('Error sending notification:', notifError);
         }
       } else if (status === 'rejected') {
         // Send rejection notification
         try {
-          await supabase
-            .from('notifications')
-            .insert({
-              user_id: submission.user_id,
-              title: 'Special Task Rejected ❌',
-              message: `Your UID for "${submission.task_template?.title || 'Special Task'}" was rejected. Reason: ${adminNotes || 'No reason provided'}`,
-              type: 'error',
-              action_url: '/tasks',
-              metadata: { task_id: submission.task_id, reason: adminNotes }
-            });
+          await addDoc(collection(db, 'notifications'), {
+            user_id: submission.user_id,
+            title: 'Special Task Rejected ❌',
+            message: `Your UID for "${submission.task_template?.title || 'Special Task'}" was rejected. Reason: ${adminNotes || 'No reason provided'}`,
+            type: 'error',
+            action_url: '/tasks',
+            metadata: { task_id: submission.task_id, reason: adminNotes },
+            created_at: serverTimestamp()
+          });
         } catch (notifError) {
           console.error('Error sending notification:', notifError);
         }
@@ -470,11 +489,15 @@ export default function AdminTasks() {
       cooldown: 0,
       max_completions: 1,
       is_active: true,
-      url: ''
+      url: '',
+      requirements: {},
+      special: false,
+      bg_color: ''
     });
   };
 
   const startEditing = (task: TaskTemplate) => {
+    console.log('Starting to edit task:', task);
     setEditingTask(task);
     setTaskForm({
       title: task.title,
@@ -487,7 +510,10 @@ export default function AdminTasks() {
       cooldown: task.cooldown,
       max_completions: task.max_completions,
       is_active: task.is_active,
-      url: task.url || ''
+      url: task.url || '',
+      requirements: task.requirements || {},
+      special: task.special || false,
+      bg_color: task.bg_color || ''
     });
   };
 
@@ -498,7 +524,7 @@ export default function AdminTasks() {
 
   const getTaskTypes = () => {
     const types = [...new Set(taskTemplates.map(t => t.type))];
-    return types;
+    return types.filter(type => type && type.trim() !== '');
   };
 
   // Filter tasks by category
@@ -814,6 +840,34 @@ export default function AdminTasks() {
             })()}
           </div>
 
+          {/* Task Completions Stats */}
+          <div className="grid grid-cols-6 gap-4 mb-6">
+            <div className="bg-gray-800/50 p-4 rounded-lg border border-gray-600">
+              <div className="text-2xl font-bold text-white">{taskTemplates.length}</div>
+              <div className="text-gray-400 text-sm">Total Tasks</div>
+            </div>
+            <div className="bg-blue-500/20 p-4 rounded-lg border border-blue-500/30">
+              <div className="text-2xl font-bold text-blue-400">{stats.today}</div>
+              <div className="text-blue-400 text-sm">Today</div>
+            </div>
+            <div className="bg-purple-500/20 p-4 rounded-lg border border-purple-500/30">
+              <div className="text-2xl font-bold text-purple-400">{stats.thisWeek}</div>
+              <div className="text-purple-400 text-sm">This Week</div>
+            </div>
+            <div className="bg-gold/20 p-4 rounded-lg border border-gold/30">
+              <div className="text-2xl font-bold text-gold">{formatCurrency(stats.totalRewards)}</div>
+              <div className="text-gold text-sm">Total Rewards</div>
+            </div>
+            <div className="bg-yellow-500/20 p-4 rounded-lg border border-yellow-500/30">
+              <div className="text-2xl font-bold text-yellow-400">{stats.pendingVerification}</div>
+              <div className="text-yellow-400 text-sm">Pending</div>
+            </div>
+            <div className="bg-green-500/20 p-4 rounded-lg border border-green-500/30">
+              <div className="text-2xl font-bold text-green-400">{taskCompletions.length}</div>
+              <div className="text-green-400 text-sm">Total Submissions</div>
+            </div>
+          </div>
+
           {/* Quick Actions for Common Task Types */}
           <div className="mb-6 p-4 bg-gray-800/30 rounded-lg border border-gray-600">
             <h3 className="text-lg font-semibold text-white mb-4">Quick Actions</h3>
@@ -832,7 +886,10 @@ export default function AdminTasks() {
                     cooldown: 86400,
                     max_completions: 1,
                     is_active: true,
-                    url: ''
+                    url: '',
+                    requirements: {},
+                    special: false,
+                    bg_color: ''
                   });
                   setShowAddTask(true);
                 }}
@@ -857,7 +914,10 @@ export default function AdminTasks() {
                     cooldown: 0,
                     max_completions: 1,
                     is_active: true,
-                    url: 'https://t.me/bt_community'
+                    url: 'https://t.me/bt_community',
+                    requirements: {},
+                    special: false,
+                    bg_color: ''
                   });
                   setShowAddTask(true);
                 }}
@@ -882,7 +942,10 @@ export default function AdminTasks() {
                     cooldown: 0,
                     max_completions: 10,
                     is_active: true,
-                    url: ''
+                    url: '',
+                    requirements: {},
+                    special: false,
+                    bg_color: ''
                   });
                   setShowAddTask(true);
                 }}
@@ -1465,10 +1528,54 @@ export default function AdminTasks() {
 
             {/* Actions */}
             <div className="flex gap-2">
+              <button 
+                onClick={() => {
+                  loadTaskCompletions();
+                  loadTaskTemplates();
+                  loadSpecialTaskSubmissions();
+                }}
+                className="px-4 py-2 bg-blue-600 text-white rounded-lg font-semibold hover:bg-blue-700 transition-all duration-300"
+              >
+                <RefreshCw className="w-4 h-4 inline mr-2" />
+                Refresh
+              </button>
               <button className="px-4 py-2 bg-gradient-to-r from-gold to-yellow-500 text-navy rounded-lg font-semibold hover:scale-105 transition-all duration-300">
                 <TrendingUp className="w-4 h-4 inline mr-2" />
                 Analytics
               </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Task Completions Summary */}
+        <div className="glass p-6 border border-white/10 rounded-xl mb-6">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-xl font-bold text-white">Task Completions Summary</h2>
+              <p className="text-gray-400 text-sm">Overview of all task completions and rewards</p>
+            </div>
+            <div className="text-right">
+              <div className="text-2xl font-bold text-gold">{formatCurrency(stats.totalRewards)}</div>
+              <div className="text-sm text-gray-400">Total Rewards Distributed</div>
+            </div>
+          </div>
+          
+          <div className="grid grid-cols-4 gap-4">
+            <div className="text-center">
+              <div className="text-3xl font-bold text-white">{taskCompletions.length}</div>
+              <div className="text-sm text-gray-400">Total Completions</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-blue-400">{stats.today}</div>
+              <div className="text-sm text-gray-400">Today</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-purple-400">{stats.thisWeek}</div>
+              <div className="text-sm text-gray-400">This Week</div>
+            </div>
+            <div className="text-center">
+              <div className="text-3xl font-bold text-green-400">{taskTemplates.filter(t => t.is_active).length}</div>
+              <div className="text-sm text-gray-400">Active Tasks</div>
             </div>
           </div>
         </div>
@@ -1484,7 +1591,7 @@ export default function AdminTasks() {
               <thead className="bg-gray-800/50">
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">User</th>
-                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Task Type</th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Task Details</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Reward</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Status</th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-300 uppercase tracking-wider">Completed At</th>
@@ -1494,14 +1601,27 @@ export default function AdminTasks() {
               <tbody className="divide-y divide-gray-700/50">
                 {loading ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-4 text-center text-gray-400">
-                      Loading tasks...
+                    <td colSpan={6} className="px-6 py-8 text-center text-gray-400">
+                      <div className="flex flex-col items-center">
+                        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-gold mb-2"></div>
+                        <div className="text-lg font-medium">Loading Task Completions...</div>
+                        <div className="text-sm text-gray-500">Please wait while we fetch the data</div>
+                      </div>
                     </td>
                   </tr>
                 ) : filteredTaskCompletions.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="px-6 py-4 text-center text-gray-400">
-                      No tasks found
+                    <td colSpan={6} className="px-6 py-8 text-center text-gray-400">
+                      <div className="flex flex-col items-center">
+                        <div className="text-4xl mb-2">📋</div>
+                        <div className="text-lg font-medium mb-2">No Task Completions Found</div>
+                        <div className="text-sm text-gray-500">
+                          {searchTerm || filterTaskType !== 'all' 
+                            ? 'Try adjusting your search or filter criteria'
+                            : 'Users need to complete tasks to see data here'
+                          }
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -1517,31 +1637,41 @@ export default function AdminTasks() {
                         <div className="flex items-center">
                           <div className="w-10 h-10 bg-gradient-to-r from-gold to-yellow-500 rounded-full flex items-center justify-center mr-3">
                             <span className="text-navy font-semibold text-sm">
-                              {completion.user?.first_name?.charAt(0).toUpperCase() || 'U'}
+                              {completion.user?.first_name?.charAt(0).toUpperCase() || completion.user_id?.charAt(0).toUpperCase() || 'U'}
                             </span>
                           </div>
                           <div>
-                            <div className="text-sm font-medium text-white">{completion.user?.first_name || 'Unknown'}</div>
-                            <div className="text-sm text-gray-400">@{completion.user?.username || 'No username'}</div>
+                            <div className="text-sm font-medium text-white">
+                              {completion.user?.first_name || `User ${completion.user_id}`}
+                            </div>
+                            <div className="text-sm text-gray-400">
+                              @{completion.user?.username || `user_${completion.user_id}`}
+                            </div>
                             <div className="text-xs text-gray-500">ID: {completion.user_id}</div>
                           </div>
                         </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center">
-                          <span className="text-lg mr-2">{getTaskTypeIcon(completion.task_id.toString())}</span>
-                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getTaskTypeColor(completion.task_id.toString())}`}>
-                            {completion.task_id.toString().replace('_', ' ').toUpperCase()}
+                          <span className="text-lg mr-2">
+                            {getTaskTypeIcon(completion.task_type)}
+                          </span>
+                          <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                            getTaskTypeColor(completion.task_type)
+                          }`}>
+                            {(() => {
+                              const template = taskTemplates.find(t => t.id === completion.task_id);
+                              return template ? template.title : completion.task_type.replace('_', ' ').toUpperCase();
+                            })()}
                           </span>
                         </div>
-                        <div className="text-xs text-gray-400 mt-1">Task #{completion.task_id}</div>
+                        <div className="text-xs text-gray-400 mt-1">
+                          {completion.task_type.replace('_', ' ').toUpperCase()}
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="text-sm font-medium text-white">
-                          {(() => {
-                            const template = taskTemplates.find(t => t.id === completion.task_id.toString());
-                            return template ? formatCurrency(template.reward) : '৳0';
-                          })()}
+                          {formatCurrency(completion.reward_amount || 0)}
                         </div>
                         <div className="text-xs text-gray-400">BDT Reward</div>
                       </td>

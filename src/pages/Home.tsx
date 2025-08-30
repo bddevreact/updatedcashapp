@@ -8,10 +8,11 @@ import RecentActivity from '../components/RecentActivity';
 import NotificationCenter from '../components/NotificationCenter';
 import LiveActivityFeed from '../components/LiveActivityFeed';
 import { useNavigate } from 'react-router-dom';
-import { useUserStore } from '../store/userStore';
-import { Users, CheckSquare, TrendingUp, Gift, DollarSign, Calendar, Target, RefreshCw, Monitor } from 'lucide-react';
-import { motion } from 'framer-motion';
-import { supabase } from '../lib/supabase';
+import { useFirebaseUserStore } from '../store/firebaseUserStore';
+import { Users, TrendingUp, DollarSign, Target, Star, Zap, Activity, BarChart3, Calendar, Gift, Crown, Medal, Trophy, ArrowRight, RefreshCw, Settings, Bell, User, LogOut, Home, Wallet, CheckSquare, Share2, Award, DollarSign as DollarSignIcon, Cog, Shield, Bot, UserCheck, UserX, MessageCircle, Eye, EyeOff, Download, Upload, Filter, Search, UserPlus, CheckCircle, XCircle, AlertCircle, Info, HelpCircle, ChevronDown, ChevronUp, Plus, Minus, RotateCcw, Save, Edit, Trash2, Copy, Check, ExternalLink, Link, Hash, Tag } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { db } from '../lib/firebase';
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 
 const Index: React.FC = () => {
   const navigate = useNavigate();
@@ -21,20 +22,20 @@ const Index: React.FC = () => {
     stats, 
     realTimeData,
     telegramId
-  } = useUserStore();
+  } = useFirebaseUserStore();
   
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
 
   // Referral stats from store
   const referralStats = {
-    today: stats.todayReferrals || 0,
-    thisWeek: stats.thisWeekReferrals || 0,
-    total: stats.referralsCount || 0
+    today: stats?.today_referrals || 0,
+    thisWeek: stats?.this_week_referrals || 0,
+    total: stats?.referrals_count || 0
   };
 
   // Calculate level progress with new referral system
-  const currentLevelReferrals = stats.referralsCount || 0;
+  const currentLevelReferrals = stats?.referrals_count || 0;
   
   // New referral level system: Level 1 = 100, Level 2 = 1000, Level 3 = 5000, Level 4 = 10000
   const getNextLevelTarget = (currentLevel: number) => {
@@ -65,37 +66,37 @@ const Index: React.FC = () => {
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       
-      const { data: todayEarnings, error: earningsError } = await supabase
-        .from('earnings')
-        .select('amount')
-        .eq('user_id', telegramId)
-        .gte('created_at', today.toISOString());
+      const todayEarningsQuery = query(
+        collection(db, 'earnings'),
+        where('user_id', '==', telegramId),
+        where('created_at', '>=', today.toISOString())
+      );
+      const todayEarningsSnapshot = await getDocs(todayEarningsQuery);
+      const todayEarnings = todayEarningsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      if (earningsError) throw earningsError;
-
-      const todayTotal = todayEarnings?.reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
+      const todayTotal = todayEarnings?.reduce((sum: number, e: any) => sum + (e.amount || 0), 0) || 0;
 
       // Load this week's earnings
       const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const { data: weekEarnings, error: weekError } = await supabase
-        .from('earnings')
-        .select('amount')
-        .eq('user_id', telegramId)
-        .gte('created_at', weekAgo.toISOString());
+      const weekEarningsQuery = query(
+        collection(db, 'earnings'),
+        where('user_id', '==', telegramId),
+        where('created_at', '>=', weekAgo.toISOString())
+      );
+      const weekEarningsSnapshot = await getDocs(weekEarningsQuery);
+      const weekEarnings = weekEarningsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      if (weekError) throw weekError;
-
-      const weekTotal = weekEarnings?.reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
+      const weekTotal = weekEarnings?.reduce((sum: number, e: any) => sum + (e.amount || 0), 0) || 0;
 
       // Load total earnings
-      const { data: totalEarnings, error: totalError } = await supabase
-        .from('earnings')
-        .select('amount')
-        .eq('user_id', telegramId);
+      const totalEarningsQuery = query(
+        collection(db, 'earnings'),
+        where('user_id', '==', telegramId)
+      );
+      const totalEarningsSnapshot = await getDocs(totalEarningsQuery);
+      const totalEarnings = totalEarningsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      if (totalError) throw totalError;
-
-      const total = totalEarnings?.reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
+      const total = totalEarnings?.reduce((sum: number, e: any) => sum + (e.amount || 0), 0) || 0;
 
       // Log stats for debugging
       console.log('Real-time stats loaded:', {

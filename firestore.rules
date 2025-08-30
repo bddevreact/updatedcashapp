@@ -1,0 +1,45 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Users collection - users can only read/write their own data
+    match /users/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Allow admin users to read all user data
+      allow read: if request.auth != null && 
+        exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
+    }
+    
+    // Referral codes collection - users can read all, write their own
+    match /referralCodes/{codeId} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null && 
+        (request.auth.uid == resource.data.userId || 
+         exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid)));
+    }
+    
+    // Task completions collection - users can read/write their own
+    match /taskCompletions/{taskId} {
+      allow read, write: if request.auth != null && 
+        request.auth.uid == resource.data.userId;
+      
+      // Allow admin users to read all task completions
+      allow read: if request.auth != null && 
+        exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
+    }
+    
+    // Admin users collection - only existing admins can access
+    match /adminUsers/{adminId} {
+      allow read, write: if request.auth != null && 
+        (request.auth.uid == adminId || 
+         exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid)));
+    }
+    
+    // Public data collection - anyone can read
+    match /publicData/{docId} {
+      allow read: if true;
+      allow write: if request.auth != null && 
+        exists(/databases/$(database)/documents/adminUsers/$(request.auth.uid));
+    }
+  }
+}

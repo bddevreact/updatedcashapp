@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { Users, TrendingUp, Award, BarChart3, Calendar, Target, Zap, Shield, Activity, AlertTriangle } from 'lucide-react';
+import { Users, TrendingUp, Award, Share2, Activity, BarChart3, Calendar, Target, Zap, RefreshCw, Settings, Eye, EyeOff, Download, Upload, Filter, Search, UserPlus, UserCheck, UserX, Crown, Star, Medal, Trophy, Gift, DollarSign, ArrowUpRight, ArrowDownLeft, Clock, CheckCircle, XCircle, AlertCircle, Info, HelpCircle, ChevronDown, ChevronUp, Plus, Minus, RotateCcw, Save, Edit, Trash2, Copy, Check, ExternalLink, Link, Hash, Tag, Shield, AlertTriangle } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '../../lib/supabase';
+import { db } from '../../lib/firebase';
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 
 interface AdminReferralDashboardProps {
   adminId: string;
@@ -63,41 +64,87 @@ export default function AdminReferralDashboard({ adminId }: AdminReferralDashboa
 
     setIsLoading(true);
     try {
-      // Load system-wide referral statistics
-      const { data: stats, error: statsError } = await supabase
-        .rpc('get_admin_referral_stats', {
-          p_period: selectedPeriod,
-          p_group_username: selectedGroup === 'all' ? null : selectedGroup
-        });
+      // Load system-wide referral statistics - simplified for Firebase
+      const referralsRef = collection(db, 'referrals');
+      const referralsQuery = query(
+        referralsRef,
+        where('status', '==', 'verified'),
+        orderBy('created_at', 'desc')
+      );
+      const referralsSnapshot = await getDocs(referralsQuery);
+      const referrals = referralsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      if (statsError) throw statsError;
+      // Calculate stats manually
+      const stats = {
+        totalReferrals: referrals.length,
+        activeReferrals: referrals.filter((r: any) => r.status === 'verified').length,
+        todayReferrals: referrals.filter((r: any) => {
+          const today = new Date().toDateString();
+          return new Date(r.created_at).toDateString() === today;
+        }).length,
+        weekReferrals: referrals.filter((r: any) => {
+          const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+          return new Date(r.created_at) >= weekAgo;
+        }).length,
+        monthReferrals: referrals.filter((r: any) => {
+          const monthAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000);
+          return new Date(r.created_at) >= monthAgo;
+        }).length,
+        totalReferrers: new Set(referrals.map((r: any) => r.referrer_id)).size,
+        totalGroups: new Set(referrals.map((r: any) => r.group_username)).size,
+        averageReferralsPerUser: referrals.length > 0 ? referrals.length / new Set(referrals.map((r: any) => r.referrer_id)).size : 0
+      };
 
-      // Load top referrers across all groups
-      const { data: topRefs, error: topError } = await supabase
-        .rpc('get_admin_top_referrers', {
-          p_limit: 10,
-          p_group_username: selectedGroup === 'all' ? null : selectedGroup
-        });
+      // Load top referrers - simplified for Firebase
+      const referrerCounts = referrals.reduce((acc: any, ref: any) => {
+        const referrerId = ref.referrer_id;
+        if (!acc[referrerId]) {
+          acc[referrerId] = { referrer_id: referrerId, total_referrals: 0, verified_referrals: 0 };
+        }
+        acc[referrerId].total_referrals++;
+        if (ref.status === 'verified') {
+          acc[referrerId].verified_referrals++;
+        }
+        return acc;
+      }, {});
 
-      if (topError) throw topError;
+      const topRefs = Object.values(referrerCounts)
+        .sort((a: any, b: any) => b.total_referrals - a.total_referrals)
+        .slice(0, 10);
 
-      // Load group performance
-      const { data: groups, error: groupsError } = await supabase
-        .rpc('get_group_referral_performance', {
-          p_period: selectedPeriod
-        });
+      // Load group performance - simplified for Firebase
+      const groupCounts = referrals.reduce((acc: any, ref: any) => {
+        const groupUsername = ref.group_username || 'unknown';
+        if (!acc[groupUsername]) {
+          acc[groupUsername] = { group_username: groupUsername, total_referrals: 0, verified_referrals: 0 };
+        }
+        acc[groupUsername].total_referrals++;
+        if (ref.status === 'verified') {
+          acc[groupUsername].verified_referrals++;
+        }
+        return acc;
+      }, {});
 
-      if (groupsError) throw groupsError;
+      const groups = Object.values(groupCounts);
 
-      // Load suspicious activities
-      const { data: suspicious, error: suspiciousError } = await supabase
-        .rpc('detect_suspicious_referrals', {
-          p_threshold: 50 // Detect if someone gets more than 50 referrals in a day
-        });
+      // Load suspicious activities - simplified for Firebase
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      
+      const todayReferrals = referrals.filter((r: any) => new Date(r.created_at) >= today);
+      const referrerDailyCounts = todayReferrals.reduce((acc: any, ref: any) => {
+        const referrerId = ref.referrer_id;
+        acc[referrerId] = (acc[referrerId] || 0) + 1;
+        return acc;
+      }, {});
 
-      if (suspiciousError) {
-        console.error('Suspicious detection error:', suspiciousError);
-      }
+      const suspicious = Object.entries(referrerDailyCounts)
+        .filter(([_, count]) => (count as number) > 50)
+        .map(([referrerId, count]) => ({
+          referrer_id: referrerId,
+          daily_referrals: count,
+          risk_level: (count as number) > 100 ? 'high' : (count as number) > 75 ? 'medium' : 'low'
+        }));
 
       setSystemStats(stats || {
         totalReferrals: 0,
@@ -109,9 +156,15 @@ export default function AdminReferralDashboard({ adminId }: AdminReferralDashboa
         totalGroups: 0,
         averageReferralsPerUser: 0
       });
-      setTopReferrers(topRefs || []);
-      setGroupPerformance(groups || []);
-      setSuspiciousActivities(suspicious || []);
+      setTopReferrers(topRefs as TopReferrer[] || []);
+      setGroupPerformance(groups as GroupPerformance[] || []);
+      setSuspiciousActivities(suspicious.map((s: any) => ({
+        referrer_id: s.referrer_id,
+        username: `User ${s.referrer_id.slice(-4)}`,
+        suspicious_pattern: 'High daily referral count',
+        details: `${s.daily_referrals} referrals in one day`,
+        risk_level: s.risk_level
+      })) || []);
 
     } catch (error) {
       console.error('Error loading admin referral data:', error);

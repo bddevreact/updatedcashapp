@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { BarChart3, TrendingUp, Calendar, Target, DollarSign, Activity, PieChart } from 'lucide-react';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/firebase';
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
+import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar, PieChart, Pie, Cell } from 'recharts';
+import { BarChart3, TrendingUp, Calendar, Target, DollarSign, Activity, PieChart as LucidePieChart } from 'lucide-react';
 import { motion } from 'framer-motion';
 
 interface EarningsAnalyticsProps {
@@ -42,19 +44,24 @@ export default function EarningsAnalytics({ telegramId }: EarningsAnalyticsProps
       const startDate = new Date();
       startDate.setMonth(startDate.getMonth() - months);
 
-      const { data: earnings, error } = await supabase
-        .from('earnings')
-        .select('*')
-        .eq('user_id', telegramId)
-        .gte('created_at', startDate.toISOString())
-        .order('created_at', { ascending: true });
+      const earningsRef = collection(db, 'earnings');
+      const q = query(
+        earningsRef,
+        where('user_id', '==', telegramId),
+        orderBy('created_at', 'desc'),
+        limit(months * 30) // Assuming an average of 30 days per month for the limit
+      );
 
-      if (error) throw error;
+      const querySnapshot = await getDocs(q);
+      const earningsData: any[] = [];
+      querySnapshot.forEach((doc) => {
+        earningsData.push({ id: doc.id, ...doc.data() });
+      });
 
       // Process monthly data
       const monthlyMap = new Map<string, MonthlyData>();
       
-      earnings?.forEach((earning: any) => {
+      earningsData?.forEach((earning: any) => {
         const date = new Date(earning.created_at);
         const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
         const monthName = date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
@@ -96,9 +103,9 @@ export default function EarningsAnalytics({ telegramId }: EarningsAnalyticsProps
 
       // Process source data
       const sourceMap = new Map<string, { total: number; count: number }>();
-      const totalAmount = earnings?.reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
+      const totalAmount = earningsData?.reduce((sum, e) => sum + (e.amount || 0), 0) || 0;
 
-      earnings?.forEach((earning: any) => {
+      earningsData?.forEach((earning: any) => {
         const source = earning.source || 'unknown';
         if (!sourceMap.has(source)) {
           sourceMap.set(source, { total: 0, count: 0 });
@@ -203,7 +210,7 @@ export default function EarningsAnalytics({ telegramId }: EarningsAnalyticsProps
       {sourceData.length > 0 && (
         <div className="glass p-6">
           <h3 className="text-lg font-semibold mb-4 flex items-center gap-2">
-            <PieChart className="w-5 h-5 text-gold" />
+            <LucidePieChart className="w-5 h-5 text-gold" />
             Earnings by Source
           </h3>
           <div className="space-y-3">

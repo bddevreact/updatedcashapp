@@ -1,16 +1,34 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Lock, User, Shield, Settings, CheckCircle } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { useAdminAuth } from '../../hooks/useAdminAuth';
 import { motion } from 'framer-motion';
 
 export default function AdminLogin() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('cashpoints@gmail.com');
+  const [password, setPassword] = useState('admin123');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
   const navigate = useNavigate();
+  const { adminLogin, user, isAdmin } = useAdminAuth();
+
+  // Auto-redirect if already admin
+  useEffect(() => {
+    console.log('🔐 Login useEffect:', { isAdmin, user: user?.email });
+    if (isAdmin && user) {
+      console.log('✅ Redirecting to dashboard');
+      navigate('/admin/dashboard', { replace: true });
+    }
+  }, [isAdmin, user, navigate]);
+
+  // Additional redirect effect for successful login
+  useEffect(() => {
+    if (success && user && isAdmin) {
+      console.log('✅ Success + Admin, redirecting to dashboard');
+      navigate('/admin/dashboard', { replace: true });
+    }
+  }, [success, user, isAdmin, navigate]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -19,35 +37,22 @@ export default function AdminLogin() {
     setSuccess(false);
 
     try {
-      const { data, error } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+      // Use Firebase admin authentication
+      const success = await adminLogin();
 
-      if (error) throw error;
-
-      // Check if user has admin role
-      const { data: profile, error: profileError } = await supabase
-        .from('admin_users')
-        .select('role')
-        .eq('user_id', data.user.id)
-        .single();
-
-      // Fix: Check for any admin role (admin, super_admin, moderator)
-      if (profileError || !profile || !['admin', 'super_admin', 'moderator'].includes(profile.role)) {
-        console.log('Profile error:', profileError);
-        console.log('Profile data:', profile);
-        console.log('User role:', profile?.role);
-        throw new Error('Unauthorized access');
+      if (success) {
+        // Show success message
+        setSuccess(true);
+        console.log('✅ Login successful, showing success message');
+        
+        // Redirect after 2 seconds to show the success message and ensure state is updated
+        setTimeout(() => {
+          console.log('🔄 Redirecting to dashboard after timeout');
+          navigate('/admin/dashboard', { replace: true });
+        }, 2000);
+      } else {
+        throw new Error('Login failed');
       }
-
-      // Show success message
-      setSuccess(true);
-      
-      // Redirect after 1 second to show the success message
-      setTimeout(() => {
-        navigate('/admin/dashboard');
-      }, 1000);
 
     } catch (error) {
       setError(error instanceof Error ? error.message : 'Login failed');
@@ -214,8 +219,9 @@ export default function AdminLogin() {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="w-full glass border border-white/10 rounded-lg py-3 px-10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gold focus:border-gold transition-all duration-300"
-                  placeholder="admin@btcommunity.com"
+                  placeholder="cashpoints@gmail.com"
                   required
+                  readOnly
                 />
               </div>
             </div>
@@ -231,8 +237,9 @@ export default function AdminLogin() {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="w-full glass border border-white/10 rounded-lg py-3 px-10 text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-gold focus:border-gold transition-all duration-300"
-                  placeholder="••••••••"
+                  placeholder="admin123"
                   required
+                  readOnly
                 />
               </div>
             </div>
@@ -272,7 +279,7 @@ export default function AdminLogin() {
           </motion.form>
         )}
 
-        {/* Security Notice */}
+        {/* Admin Credentials Info */}
         {!success && (
           <motion.div 
             className="mt-8 text-center"
@@ -280,9 +287,16 @@ export default function AdminLogin() {
             animate={{ opacity: 1 }}
             transition={{ duration: 0.6, delay: 1.5 }}
           >
+            <div className="glass border border-gold/30 bg-gradient-to-r from-gold/10 to-transparent rounded-lg p-4 mb-4">
+              <h3 className="text-sm font-semibold text-gold mb-2">🔐 Admin Credentials</h3>
+              <div className="text-xs text-gray-300 space-y-1">
+                <p><strong>Email:</strong> cashpoints@gmail.com</p>
+                <p><strong>Password:</strong> admin123</p>
+              </div>
+            </div>
             <div className="flex items-center justify-center gap-2 text-gray-400 text-sm">
               <Shield className="w-4 h-4" />
-              <span>Secure admin access only</span>
+              <span>Firebase Authentication</span>
             </div>
           </motion.div>
         )}

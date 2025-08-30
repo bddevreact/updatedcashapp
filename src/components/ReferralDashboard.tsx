@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Users, TrendingUp, Award, Share2, Activity, BarChart3, Calendar, Target, Zap } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/firebase';
+import { collection, query, where, getDocs, orderBy, limit } from 'firebase/firestore';
 import ReferralLinkTracker from './ReferralLinkTracker';
 
 interface ReferralDashboardProps {
@@ -44,23 +45,22 @@ export default function ReferralDashboard({ telegramId }: ReferralDashboardProps
 
     setIsLoading(true);
     try {
-      // Load referral performance
-      const { data: performance, error: perfError } = await supabase
-        .rpc('get_referral_performance', {
-          p_referrer_id: telegramId,
-          p_group_username: selectedGroup === 'all' ? null : selectedGroup
-        });
+      // Load referral performance - simplified for Firebase
+      const performanceQuery = query(
+        collection(db, 'referrals'),
+        where('referrer_id', '==', telegramId)
+      );
+      const performanceSnapshot = await getDocs(performanceQuery);
+      const performance = performanceSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      if (perfError) throw perfError;
-
-      // Load top referrers
-      const { data: topRefs, error: topError } = await supabase
-        .rpc('get_top_referrers', {
-          p_group_username: selectedGroup === 'all' ? null : selectedGroup,
-          p_limit: 5
-        });
-
-      if (topError) throw topError;
+      // Load top referrers - simplified for Firebase
+      const topRefsQuery = query(
+        collection(db, 'referrals'),
+        orderBy('created_at', 'desc'),
+        limit(5)
+      );
+      const topRefsSnapshot = await getDocs(topRefsQuery);
+      const topRefs = topRefsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       setReferralPerformance(performance || []);
       setTopReferrers(topRefs || []);
@@ -74,14 +74,15 @@ export default function ReferralDashboard({ telegramId }: ReferralDashboardProps
 
   const loadAvailableGroups = async () => {
     try {
-      const { data: groups, error } = await supabase
-        .from('referral_joins')
-        .select('group_username')
-        .eq('referrer_id', telegramId)
-        .not('group_username', 'is', null);
+      const groupsQuery = query(
+        collection(db, 'referral_joins'),
+        where('referrer_id', '==', telegramId)
+      );
+      const groupsSnapshot = await getDocs(groupsQuery);
+      const groups = groupsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
-      if (!error && groups) {
-        const uniqueGroups = [...new Set(groups.map(g => g.group_username))];
+      if (groups) {
+        const uniqueGroups = [...new Set(groups.map(g => g.group_username).filter(Boolean))];
         setAvailableGroups(uniqueGroups);
       }
     } catch (error) {

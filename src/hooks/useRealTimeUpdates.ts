@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { useUserStore } from '../store/userStore';
+import { useFirebaseUserStore } from '../store/firebaseUserStore';
 
 interface RealTimeUpdateOptions {
   interval?: number; // Update interval in milliseconds
@@ -16,7 +16,7 @@ export function useRealTimeUpdates(options: RealTimeUpdateOptions = {}) {
     onError
   } = options;
 
-  const { updateRealTimeStats } = useUserStore();
+  const { updateRealTimeStats } = useFirebaseUserStore();
   const [isUpdating, setIsUpdating] = useState(false);
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date());
   const [error, setError] = useState<Error | null>(null);

@@ -1,18 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { ArrowUpRight, ArrowDownLeft, CreditCard, Bitcoin, DollarSign, CheckSquare, Users, TrendingUp, Shield, Zap, Smartphone, Building, ChevronDown, AlertCircle, CheckCircle2, Clock, RefreshCw } from 'lucide-react';
-import { useUserStore } from '../store/userStore';
+import { useFirebaseUserStore } from '../store/firebaseUserStore';
 import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { motion, AnimatePresence } from 'framer-motion';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/firebase';
+import { collection, addDoc, updateDoc, doc, query, where, orderBy, limit, getDocs, serverTimestamp } from 'firebase/firestore';
 import { sendUserNotification } from '../lib/notifications';
 
 export default function Wallet() {
-  const { balance, telegramId, addNotification, stats } = useUserStore();
+  const { balance, telegramId, addNotification, stats } = useFirebaseUserStore();
   
   // Calculate balances from available data
   const balances = {
-    task: stats?.todayEarnings || 0,
-    referral: (stats?.referralsCount || 0) * 50, // Assuming 50 per referral
+    task: stats?.today_earnings || 0,
+    referral: (stats?.referrals_count || 0) * 50, // Assuming 50 per referral
     total: balance
   };
   const [activeTab, setActiveTab] = useState<'deposit' | 'withdraw'>('deposit');
@@ -214,22 +215,20 @@ export default function Wallet() {
       // Log the withdrawal data for debugging
       console.log('Creating withdrawal with data:', withdrawalData);
 
-      const { error } = await supabase
-        .from('withdrawal_requests')
-        .insert([withdrawalData]);
+      const withdrawalRef = await addDoc(collection(db, 'withdrawal_requests'), withdrawalData);
 
-      if (error) throw error;
+      if (!withdrawalRef) throw new Error('Failed to create withdrawal request');
 
-      // Update user balance (deduct withdrawal amount)
-      const { error: balanceError } = await supabase
-        .from('users')
-        .update({ 
+            // Update user balance (deduct withdrawal amount)
+      const userQuery = query(collection(db, 'users'), where('telegram_id', '==', telegramId));
+      const userSnapshot = await getDocs(userQuery);
+      if (!userSnapshot.empty) {
+        const userDoc = userSnapshot.docs[0];
+        await updateDoc(doc(db, 'users', userDoc.id), { 
           balance: balance - parseFloat(amount),
-          updated_at: new Date().toISOString()
-        })
-        .eq('telegram_id', telegramId);
-
-      if (balanceError) throw balanceError;
+          updated_at: serverTimestamp()
+        });
+      }
 
       setWithdrawalStatus('success');
       
@@ -330,37 +329,24 @@ export default function Wallet() {
       // Load deposits - check if deposits table exists, otherwise use user_activities
       let deposits: any[] = [];
       try {
-        const { data: depositsData, error: depositsError } = await supabase
-          .from('deposits')
-          .select('*')
-          .eq('user_id', telegramId)
-          .order('created_at', { ascending: false })
-          .limit(5);
-
-        if (!depositsError && depositsData) {
-          deposits = depositsData;
-        }
+        const depositsRef = collection(db, 'deposits');
+        const q = query(depositsRef, where('user_id', '==', telegramId), orderBy('created_at', 'desc'), limit(5));
+        const querySnapshot = await getDocs(q);
+        querySnapshot.forEach(doc => {
+          deposits.push({ id: doc.id, ...doc.data() });
+        });
       } catch (e) {
         console.log('Deposits table not found, using user_activities instead');
       }
 
       // Load withdrawals from withdrawal_requests table
-      const { data: withdrawals, error: withdrawalsError } = await supabase
-        .from('withdrawal_requests')
-        .select(`
-          *,
-          admin_notes,
-          processed_at,
-          account_name,
-          account_number,
-          bank_name,
-          crypto_symbol
-        `)
-        .eq('user_id', telegramId)
-        .order('created_at', { ascending: false })
-        .limit(5);
-
-      if (withdrawalsError) throw withdrawalsError;
+      const withdrawalsRef = collection(db, 'withdrawal_requests');
+      const q = query(withdrawalsRef, where('user_id', '==', telegramId), orderBy('created_at', 'desc'), limit(5));
+      const querySnapshot = await getDocs(q);
+      const withdrawals: any[] = [];
+      querySnapshot.forEach(doc => {
+        withdrawals.push({ id: doc.id, ...doc.data() });
+      });
 
       // Combine and format transactions
       const allTransactions = [
@@ -412,35 +398,24 @@ export default function Wallet() {
       // Load all deposits
       let deposits: any[] = [];
       try {
-        const { data: depositsData, error: depositsError } = await supabase
-          .from('deposits')
-          .select('*')
-          .eq('user_id', telegramId)
-          .order('created_at', { ascending: false });
-
-        if (!depositsError && depositsData) {
-          deposits = depositsData;
-        }
+        const depositsRef = collection(db, 'deposits');
+        const q = query(depositsRef, where('user_id', '==', telegramId), orderBy('created_at', 'desc'));
+        const querySnapshot = await getDocs(q);
+        querySnapshot.forEach(doc => {
+          deposits.push({ id: doc.id, ...doc.data() });
+        });
       } catch (e) {
         console.log('Deposits table not found, using user_activities instead');
       }
 
       // Load all withdrawals
-      const { data: withdrawals, error: withdrawalsError } = await supabase
-        .from('withdrawal_requests')
-        .select(`
-          *,
-          admin_notes,
-          processed_at,
-          account_name,
-          account_number,
-          bank_name,
-          crypto_symbol
-        `)
-        .eq('user_id', telegramId)
-        .order('created_at', { ascending: false });
-
-      if (withdrawalsError) throw withdrawalsError;
+      const withdrawalsRef = collection(db, 'withdrawal_requests');
+      const q = query(withdrawalsRef, where('user_id', '==', telegramId), orderBy('created_at', 'desc'));
+      const querySnapshot = await getDocs(q);
+      const withdrawals: any[] = [];
+      querySnapshot.forEach(doc => {
+        withdrawals.push({ id: doc.id, ...doc.data() });
+      });
 
       // Combine and format all transactions
       const allTransactions = [

@@ -1,6 +1,8 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
-import { supabase } from '../lib/supabase';
+import { db } from '../lib/firebase';
+import { collection, doc, getDoc, setDoc, updateDoc, query, where, orderBy, limit, onSnapshot, addDoc, deleteDoc } from 'firebase/firestore';
+import type { FirebaseUser, UserActivity, Notification, UserStats } from '../types/firebase';
 
 interface UserState {
   // Basic user info
@@ -78,9 +80,9 @@ interface UserState {
   updateClaimStreak: (streak: number, lastClaim: Date) => Promise<void>;
   updateLastEnergyRefill: (date: Date | null) => Promise<void>;
   loadUserData: (telegramId: string) => Promise<void>;
-  createUser: (userData: any) => Promise<void>;
-  updateUserProfile: (updates: any) => Promise<void>;
-  addNotification: (notification: Omit<UserState['realTimeData']['notifications'][0], 'id' | 'timestamp' | 'read'>) => void;
+  createUser: (userData: Partial<FirebaseUser>) => Promise<void>;
+  updateUserProfile: (updates: Partial<FirebaseUser>) => Promise<void>;
+  addNotification: (notification: Omit<Notification, 'id' | 'created_at' | 'read'>) => void;
   markNotificationAsRead: (id: string) => void;
   clearNotifications: () => void;
   updateRealTimeStats: () => Promise<void>;

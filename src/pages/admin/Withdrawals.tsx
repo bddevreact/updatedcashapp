@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { DollarSign, Search, Filter, CheckCircle, XCircle, Eye, Clock, AlertCircle, TrendingUp } from 'lucide-react';
-import { supabase } from '../../lib/supabase';
+import { db } from '../../lib/firebase';
+import { collection, query, orderBy, limit, getDocs, where, doc, updateDoc, deleteDoc, serverTimestamp, addDoc } from 'firebase/firestore';
 import { motion } from 'framer-motion';
 import { sendUserNotification } from '../../lib/notifications';
 
