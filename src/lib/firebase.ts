@@ -7,7 +7,7 @@ const firebaseConfig = {
   apiKey: "AIzaSyAB2r7H-vfHspnraXwPnK5pricxKHQ4hIc",
   authDomain: "cashpoints-d0449.firebaseapp.com",
   projectId: "cashpoints-d0449",
-  storageBucket: "cashpoints-d0449.firebasestorage.app",
+  storageBucket: "cashpoints-d0449.appspot.com", // ✅ fixed here
   messagingSenderId: "156712241026",
   appId: "1:156712241026:web:6fb02b7e78d02723bef19b",
   measurementId: "G-WXKRYEC93N"
@@ -22,10 +22,10 @@ export const db = getFirestore(app);
 // Initialize Auth
 export const auth = getAuth(app);
 
-// Initialize Analytics
-export const analytics = getAnalytics(app);
+// Initialize Analytics (only works in browser environment)
+export const analytics = typeof window !== "undefined" ? getAnalytics(app) : null;
 
-// Admin credentials (for reference)
+// Admin credentials (for reference, ⚠️ better to keep in .env file)
 export const ADMIN_CREDENTIALS = {
   email: 'cashpoints@gmail.com',
   password: 'admin123'
