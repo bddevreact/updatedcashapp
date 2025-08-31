@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Wallet, Trophy, Gift, Share2, Video, Users, MessageCircle as MessageChat, Star, Clock, CheckCircle2, TrendingUp, Calendar, Target, Award, CheckCircle, AlertCircle, RefreshCw } from 'lucide-react';
-import { useUserStore } from '../store/userStore';
+import { useFirebaseUserStore } from '../store/firebaseUserStore';
 import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { db } from '../lib/firebase';
 import { 
@@ -179,7 +179,7 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onComplete, completed, cooldo
 };
 
 export default function Tasks() {
-  const { telegramId, balance, level, stats, addNotification, updateBalance } = useUserStore();
+  const { telegramId, balance, level, stats, addNotification, updateBalance } = useFirebaseUserStore();
   const [activeTab, setActiveTab] = useState<'daily' | 'social' | 'special'>('daily');
   const [completedTasks, setCompletedTasks] = useState<Set<string>>(new Set());
   const [taskCooldowns, setTaskCooldowns] = useState<Record<string, number>>({});
@@ -533,19 +533,17 @@ export default function Tasks() {
       throttledAddNotification({
         type: 'error',
         title: 'Login Required',
-        message: 'Please login to complete tasks.',
-        user_id: telegramId || ''
+        message: 'Please login to complete tasks.'
       });
       return;
     }
 
     if (completedTasks.has(task.id) || taskCooldowns[task.id] > 0) {
-      throttledAddNotification({
-        type: 'warning',
-        title: 'Task Not Available',
-        message: completedTasks.has(task.id) ? 'Task already completed.' : `Wait ${formatTime(taskCooldowns[task.id])}.`,
-        user_id: telegramId || ''
-      });
+              throttledAddNotification({
+          type: 'warning',
+          title: 'Task Not Available',
+          message: completedTasks.has(task.id) ? 'Task already completed.' : `Wait ${formatTime(taskCooldowns[task.id])}.`
+        });
       return;
     }
 
@@ -563,8 +561,7 @@ export default function Tasks() {
           throttledAddNotification({
             type: 'info',
             title: 'Signup Opened',
-            message: 'Complete signup and submit UID.',
-            user_id: telegramId || ''
+            message: 'Complete signup and submit UID.'
           });
         }
         setCurrentSpecialTask(task);
@@ -583,23 +580,26 @@ export default function Tasks() {
       }
     } catch (error: any) {
       console.error('Error in task action:', error.code, error.message);
-      throttledAddNotification({
-        type: 'error',
-        title: 'Task Failed',
-        message: error.message || 'Failed to complete task.',
-        user_id: telegramId || ''
-      });
+              throttledAddNotification({
+          type: 'error',
+          title: 'Task Failed',
+          message: error.message || 'Failed to complete task.'
+        });
     }
   };
 
   const completeTask = async (task: Task) => {
     try {
       console.log('🎯 Starting task completion for user:', telegramId);
+      console.log('🎯 Task details:', task);
       
       await runTransaction(db, async (transaction) => {
+        console.log('🔄 Starting Firebase transaction...');
+        
         // Query user by telegram_id
         const userQuery = query(collection(db, 'users'), where('telegram_id', '==', telegramId), limit(1));
         const userSnap = await getDocs(userQuery);
+        console.log('👤 User query result:', userSnap.size, 'documents found');
         
         let userDocRef;
         let userData;
@@ -632,10 +632,14 @@ export default function Tasks() {
           limit(1)
         );
         const lastCompletionSnapshot = await getDocs(lastCompletionQuery);
+        console.log('⏰ Last completion query result:', lastCompletionSnapshot.size, 'documents found');
+        
         if (!lastCompletionSnapshot.empty) {
           const last = lastCompletionSnapshot.docs[0].data();
           const timeSince = (Date.now() - last.completed_at.toDate().getTime()) / 1000;
+          console.log('⏰ Time since last completion:', timeSince, 'seconds');
           if (task.cooldown && timeSince < task.cooldown) {
+            console.log('❌ Cooldown active, cannot complete task');
             throw new Error('Cooldown active');
           }
         }
@@ -648,10 +652,14 @@ export default function Tasks() {
           total_earnings: (userData.total_earnings || 0) + task.reward,
           updated_at: serverTimestamp()
         });
+        console.log('✅ User balance updated in transaction');
       });
 
+      console.log('✅ Firebase transaction completed successfully');
+
       // Add task completion outside transaction
-      await addDoc(collection(db, 'task_completions'), {
+      console.log('📝 Adding task completion record...');
+      const completionRef = await addDoc(collection(db, 'task_completions'), {
         user_id: telegramId,
         task_id: task.id,
         task_type: task.type,
@@ -660,8 +668,7 @@ export default function Tasks() {
         completed_at: serverTimestamp(),
         created_at: serverTimestamp()
       });
-
-      console.log('✅ Task completion recorded in database');
+      console.log('✅ Task completion recorded in database with ID:', completionRef.id);
 
       await updateBalance(task.reward);
       setCompletedTasks(prev => new Set([...prev, task.id]));
@@ -683,7 +690,10 @@ export default function Tasks() {
         loadDailyCheckIn();
       }, 1000);
     } catch (error: any) {
-      console.error('❌ Error completing task:', error.code, error.message);
+      console.error('❌ Error completing task:', error);
+      console.error('❌ Error code:', error.code);
+      console.error('❌ Error message:', error.message);
+      console.error('❌ Full error object:', error);
       
       // Handle index errors specifically
       if (error.code === 'failed-precondition') {
