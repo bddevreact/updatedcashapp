@@ -433,23 +433,49 @@ export default function Tasks() {
     if (!telegramId) return;
     
     try {
+      console.log('🔄 Loading daily check-in status for user:', telegramId);
+      
       const today = new Date();
       today.setHours(0, 0, 0, 0);
       const tomorrow = new Date(today);
       tomorrow.setDate(tomorrow.getDate() + 1);
       
+      // First try with task_type field
       const q = query(
         collection(db, 'task_completions'),
         where('user_id', '==', telegramId),
         where('task_type', '==', 'daily_checkin'),
-        where('created_at', '>=', Timestamp.fromDate(today)),
-        where('created_at', '<', Timestamp.fromDate(tomorrow))
+        where('completed_at', '>=', Timestamp.fromDate(today)),
+        where('completed_at', '<', Timestamp.fromDate(tomorrow))
       );
       
       const querySnapshot = await getDocs(q);
-      setDailyCheckIn(!querySnapshot.empty);
+      console.log('📊 Daily check-in query result:', querySnapshot.size, 'completions found');
+      
+      if (querySnapshot.empty) {
+        // If no results with task_type, try with task_id
+        const dailyTask = tasks.find(t => t.type === 'checkin');
+        if (dailyTask) {
+          const q2 = query(
+            collection(db, 'task_completions'),
+            where('user_id', '==', telegramId),
+            where('task_id', '==', dailyTask.id),
+            where('completed_at', '>=', Timestamp.fromDate(today)),
+            where('completed_at', '<', Timestamp.fromDate(tomorrow))
+          );
+          
+          const querySnapshot2 = await getDocs(q2);
+          console.log('📊 Daily check-in query with task_id result:', querySnapshot2.size, 'completions found');
+          setDailyCheckIn(!querySnapshot2.empty);
+        } else {
+          setDailyCheckIn(false);
+        }
+      } else {
+        setDailyCheckIn(true);
+      }
     } catch (error: any) {
       console.error('Error loading daily check-in:', error.code, error.message);
+      setDailyCheckIn(false);
     }
   };
 
@@ -805,7 +831,8 @@ export default function Tasks() {
       });
       console.log('✅ Task completion recorded in database with ID:', completionRef.id);
 
-      await updateBalance(task.reward);
+      // Don't call updateBalance here as it's already updated in the transaction
+      // await updateBalance(task.reward);
       setCompletedTasks(prev => new Set([...prev, task.id]));
       if (task.cooldown) {
         setTaskCooldowns(prev => ({ ...prev, [task.id]: task.cooldown! }));
@@ -1131,6 +1158,9 @@ export default function Tasks() {
                   <p className={`text-lg font-bold ${dailyCheckIn ? 'text-green-400' : 'text-yellow-400'}`}>
                     {dailyCheckIn ? '✓ Completed' : '⏰ Pending'}
                   </p>
+                  {dailyCheckIn && (
+                    <p className="text-xs text-gray-400">Today's check-in done</p>
+                  )}
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
