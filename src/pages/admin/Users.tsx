@@ -165,22 +165,24 @@ export default function AdminUsers() {
 
   const filteredUsers = users.filter(user => {
     const matchesSearch = 
-      user.first_name.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.username?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-      user.telegram_id.toString().includes(searchTerm);
+      (user.first_name?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      (user.username?.toLowerCase() || '').includes(searchTerm.toLowerCase()) ||
+      user.telegram_id?.toString().includes(searchTerm);
     
     const matchesFilter = filterStatus === 'all' || 
       (filterStatus === 'active' && (() => {
+        if (!user.last_active) return false;
         const lastActive = typeof user.last_active === 'string' ? new Date(user.last_active) : new Date(user.last_active.seconds * 1000);
         return lastActive > new Date(Date.now() - 24 * 60 * 60 * 1000);
       })()) ||
       (filterStatus === 'inactive' && (() => {
+        if (!user.last_active) return true; // Consider users without last_active as inactive
         const lastActive = typeof user.last_active === 'string' ? new Date(user.last_active) : new Date(user.last_active.seconds * 1000);
         return lastActive <= new Date(Date.now() - 24 * 60 * 60 * 1000);
       })());
 
     const matchesBalance = balanceSearch === '' || 
-      (balanceFilter === 'all' && user.balance.toString().includes(balanceSearch)) ||
+      (balanceFilter === 'all' && user.balance?.toString().includes(balanceSearch)) ||
       (balanceFilter === 'above' && user.balance >= Number(balanceSearch)) ||
       (balanceFilter === 'below' && user.balance <= Number(balanceSearch)) ||
       (balanceFilter === 'exact' && user.balance === Number(balanceSearch));
@@ -385,6 +387,7 @@ export default function AdminUsers() {
           >
             <div className="text-3xl font-bold text-white">
               {users.filter(u => {
+                if (!u.last_active) return false;
                 const lastActive = typeof u.last_active === 'string' ? new Date(u.last_active) : new Date(u.last_active.seconds * 1000);
                 return lastActive > new Date(Date.now() - 24 * 60 * 60 * 1000);
               }).length}
@@ -521,9 +524,9 @@ export default function AdminUsers() {
                           <div className="w-10 h-10 rounded-full mr-3 overflow-hidden">
                             {user.telegram_id ? (
                               <>
-                                <img
-                                  src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.telegram_id}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`}
-                                  alt={`${user.first_name}'s avatar`}
+                                                                 <img
+                                   src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.telegram_id}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`}
+                                   alt={`${user.first_name || 'User'}'s avatar`}
                                   className="w-full h-full object-cover"
                                   onError={(e) => {
                                     const target = e.target as HTMLImageElement;
@@ -533,20 +536,20 @@ export default function AdminUsers() {
                                 />
                                 <div className="w-full h-full bg-gradient-to-r from-gold to-yellow-500 flex items-center justify-center hidden">
                                   <span className="text-navy font-semibold text-sm">
-                                    {user.first_name.charAt(0).toUpperCase()}
+                                    {user.first_name?.charAt(0)?.toUpperCase() || 'U'}
                                   </span>
                                 </div>
                               </>
                             ) : (
                               <div className="w-full h-full bg-gradient-to-r from-gold to-yellow-500 flex items-center justify-center">
                                 <span className="text-navy font-semibold text-sm">
-                                  {user.first_name.charAt(0).toUpperCase()}
+                                  {user.first_name?.charAt(0)?.toUpperCase() || 'U'}
                                 </span>
                               </div>
                             )}
                           </div>
                           <div>
-                            <div className="text-sm font-medium text-white">{user.first_name} {user.last_name}</div>
+                            <div className="text-sm font-medium text-white">{user.first_name || 'Unknown'} {user.last_name || ''}</div>
                             <div className="text-sm text-gray-400">@{user.username || 'No username'}</div>
                             <div className="text-xs text-gray-500">ID: {user.telegram_id}</div>
                           </div>
@@ -589,6 +592,7 @@ export default function AdminUsers() {
                         <div className="text-sm text-white">{formatDate(user.last_active)}</div>
                         <div className="text-xs text-gray-400">
                           {(() => {
+                            if (!user.last_active) return 'Never Active';
                             const lastActive = typeof user.last_active === 'string' ? new Date(user.last_active) : new Date(user.last_active.seconds * 1000);
                             return lastActive > new Date(Date.now() - 24 * 60 * 60 * 1000) ? 'Active' : 'Inactive';
                           })()}
@@ -653,7 +657,7 @@ export default function AdminUsers() {
 
               <div className="mb-4">
                 <p className="text-gray-300 mb-2">
-                  <strong>User:</strong> {selectedUser.first_name} (@{selectedUser.username})
+                  <strong>User:</strong> {selectedUser.first_name || 'Unknown'} (@{selectedUser.username || 'no_username'})
                 </p>
                 <p className="text-gray-300 mb-2">
                   <strong>Current Balance:</strong> {formatCurrency(selectedUser.balance)}
@@ -730,9 +734,9 @@ export default function AdminUsers() {
                   <div className="w-16 h-16 rounded-full overflow-hidden">
                     {selectedUser.telegram_id ? (
                       <>
-                        <img 
-                          src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedUser.telegram_id}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`}
-                          alt={`${selectedUser.first_name}'s avatar`}
+                                                 <img 
+                           src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedUser.telegram_id}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`}
+                           alt={`${selectedUser.first_name || 'User'}'s avatar`}
                           className="w-full h-full object-cover"
                           onError={(e) => {
                             const target = e.target as HTMLImageElement;
@@ -864,7 +868,7 @@ export default function AdminUsers() {
                       <>
                         <img
                           src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedUser.telegram_id}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`}
-                          alt={`${selectedUser.first_name}'s avatar`}
+                          alt={`${selectedUser.first_name || 'User'}'s avatar`}
                           className="w-full h-full object-cover"
                           onError={(e) => {
                             const target = e.target as HTMLImageElement;
@@ -874,14 +878,14 @@ export default function AdminUsers() {
                         />
                         <div className="w-full h-full bg-gradient-to-r from-gold to-yellow-500 flex items-center justify-center hidden">
                           <span className="text-navy font-semibold text-sm">
-                            {selectedUser.first_name.charAt(0).toUpperCase()}
+                            {selectedUser.first_name?.charAt(0)?.toUpperCase() || 'U'}
                           </span>
                         </div>
                       </>
                     ) : (
                       <div className="w-full h-full bg-gradient-to-r from-gold to-yellow-500 flex items-center justify-center">
                         <span className="text-navy font-semibold text-sm">
-                          {selectedUser.first_name.charAt(0).toUpperCase()}
+                          {selectedUser.first_name?.charAt(0)?.toUpperCase() || 'U'}
                         </span>
                       </div>
                     )}
@@ -944,7 +948,7 @@ export default function AdminUsers() {
                       <>
                         <img
                           src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${selectedUser.telegram_id}&backgroundColor=b6e3f4,c0aede,d1d4f9,ffd5dc,ffdfbf`}
-                          alt={`${selectedUser.first_name}'s avatar`}
+                          alt={`${selectedUser.first_name || 'User'}'s avatar`}
                           className="w-full h-full object-cover"
                           onError={(e) => {
                             const target = e.target as HTMLImageElement;
@@ -954,14 +958,14 @@ export default function AdminUsers() {
                         />
                         <div className="w-full h-full bg-gradient-to-r from-gold to-yellow-500 flex items-center justify-center hidden">
                           <span className="text-navy font-semibold text-sm">
-                            {selectedUser.first_name.charAt(0).toUpperCase()}
+                            {selectedUser.first_name?.charAt(0)?.toUpperCase() || 'U'}
                           </span>
                         </div>
                       </>
                     ) : (
                       <div className="w-full h-full bg-gradient-to-r from-gold to-yellow-500 flex items-center justify-center">
                         <span className="text-navy font-semibold text-sm">
-                          {selectedUser.first_name.charAt(0).toUpperCase()}
+                          {selectedUser.first_name?.charAt(0)?.toUpperCase() || 'U'}
                         </span>
                       </div>
                     )}
