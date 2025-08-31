@@ -62,6 +62,9 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onComplete, completed, cooldo
   const [showInfo, setShowInfo] = useState(false);
   const [isCompleting, setIsCompleting] = useState(false);
 
+  // Debug logging for button state
+  console.log(`🎯 TaskCard ${task.id}: completed=${completed}, cooldown=${cooldown}, isSpecial=${isSpecial}`);
+
   const handleButtonClick = async () => {
     if (isSpecial) {
       onSpecialTaskClick?.();
@@ -83,15 +86,29 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onComplete, completed, cooldo
       if (task.type === 'checkin' && cooldown > 0) {
         const hours = Math.floor(cooldown / 3600);
         const minutes = Math.floor((cooldown % 3600) / 60);
-        return `⏰ ${hours}h ${minutes}m`;
+        const seconds = cooldown % 60;
+        if (hours > 0) {
+          return `⏰ ${hours}h ${minutes}m`;
+        } else if (minutes > 0) {
+          return `⏰ ${minutes}m ${seconds}s`;
+        } else {
+          return `⏰ ${seconds}s`;
+        }
       }
-      return '✓ Completed';
+      return '✓ Done';
     }
     if (cooldown > 0) {
       if (task.type === 'checkin') {
         const hours = Math.floor(cooldown / 3600);
         const minutes = Math.floor((cooldown % 3600) / 60);
-        return `⏰ ${hours}h ${minutes}m`;
+        const seconds = cooldown % 60;
+        if (hours > 0) {
+          return `⏰ ${hours}h ${minutes}m`;
+        } else if (minutes > 0) {
+          return `⏰ ${minutes}m ${seconds}s`;
+        } else {
+          return `⏰ ${seconds}s`;
+        }
       }
       return `⏰ ${Math.floor(cooldown / 60)}m ${cooldown % 60}s`;
     }
@@ -101,7 +118,12 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onComplete, completed, cooldo
 
   const getButtonClass = () => {
     if (isCompleting) return 'bg-blue-500 text-white cursor-not-allowed animate-pulse';
-    if (completed) return 'bg-green-500 text-white cursor-not-allowed';
+    if (completed) {
+      if (cooldown > 0) {
+        return 'bg-yellow-500 text-white cursor-not-allowed';
+      }
+      return 'bg-green-500 text-white cursor-not-allowed';
+    }
     if (cooldown > 0) return 'bg-yellow-500 text-white cursor-not-allowed';
     if (isSpecial) return 'bg-gradient-to-r from-yellow-400 to-yellow-500 text-navy hover:from-yellow-300 hover:to-yellow-400';
     return 'bg-gradient-to-r from-blue-500 to-blue-600 hover:from-blue-600 hover:to-blue-700 text-white';
@@ -224,8 +246,7 @@ export default function Tasks() {
         throttledAddNotification({
           type: 'error',
           title: 'Task Loading Failed',
-          message: 'Failed to load tasks. Please try again.',
-          user_id: telegramId || ''
+          message: 'Failed to load tasks. Please try again.'
         });
       }
     };
@@ -255,8 +276,7 @@ export default function Tasks() {
         throttledAddNotification({
           type: 'error',
           title: 'Sync Failed',
-          message: 'Failed to sync tasks.',
-          user_id: telegramId || ''
+          message: 'Failed to sync tasks.'
         });
       }
     );
@@ -277,8 +297,7 @@ export default function Tasks() {
               throttledAddNotification({
                 type: 'success',
                 title: 'UID Verified!',
-                message: `You received ৳${currentSpecialTask.reward} reward.`,
-                user_id: telegramId || ''
+                message: `You received ৳${currentSpecialTask.reward} reward.`
               });
               setTimeout(() => {
                 setShowSpecialTask(false);
@@ -292,8 +311,7 @@ export default function Tasks() {
               throttledAddNotification({
                 type: 'error',
                 title: 'UID Rejected',
-                message: data.admin_notes || 'UID verification rejected.',
-                user_id: telegramId || ''
+                message: data.admin_notes || 'UID verification rejected.'
               });
             }
           }
@@ -333,8 +351,7 @@ export default function Tasks() {
       throttledAddNotification({
         type: 'success',
         title: 'Tasks Refreshed!',
-        message: 'Tasks refreshed successfully! 🎉',
-        user_id: telegramId || ''
+        message: 'Tasks refreshed successfully! 🎉'
       });
     } catch (error: any) {
       console.error('Error refreshing tasks:', error.code, error.message);
@@ -342,7 +359,7 @@ export default function Tasks() {
         type: 'error',
         title: 'Refresh Failed',
         message: 'Failed to refresh tasks.',
-        user_id: telegramId || ''
+
       });
     } finally {
       setIsRefreshing(false);
@@ -396,7 +413,7 @@ export default function Tasks() {
         type: 'error',
         title: 'Streak Load Failed',
         message: 'Failed to load task streak.',
-        user_id: telegramId || ''
+
       });
     }
   };
@@ -449,16 +466,25 @@ export default function Tasks() {
   };
 
   const startCooldownTimer = () => {
+    console.log('🕐 Starting cooldown timer...');
     const interval = setInterval(() => {
       setTaskCooldowns(prev => {
         const newCooldowns = { ...prev };
+        let hasChanges = false;
         Object.keys(newCooldowns).forEach(taskId => {
           if (newCooldowns[taskId] > 0) {
             newCooldowns[taskId]--;
+            hasChanges = true;
+            console.log(`⏰ Task ${taskId} cooldown: ${newCooldowns[taskId]}s`);
           } else {
             delete newCooldowns[taskId]; // Clean up for performance
+            hasChanges = true;
+            console.log(`✅ Task ${taskId} cooldown expired`);
           }
         });
+        if (hasChanges) {
+          console.log('🔄 Updated cooldowns:', newCooldowns);
+        }
         return newCooldowns;
       });
     }, 1000);
@@ -504,14 +530,20 @@ export default function Tasks() {
         const completedAt = new Date(completion.completed_at).getTime();
         const timeSinceCompletion = (now - completedAt) / 1000;
         
+        console.log(`📊 Task ${completion.task_id}: completed ${timeSinceCompletion}s ago, cooldown: ${task.cooldown}s`);
+        
         if (task.cooldown) {
           const remainingCooldown = Math.max(0, task.cooldown - timeSinceCompletion);
           if (remainingCooldown > 0) {
             completed.add(completion.task_id);
             cooldowns[completion.task_id] = remainingCooldown;
+            console.log(`⏰ Task ${completion.task_id}: ${remainingCooldown}s cooldown remaining`);
+          } else {
+            console.log(`✅ Task ${completion.task_id}: cooldown expired`);
           }
         } else {
           completed.add(completion.task_id);
+          console.log(`✅ Task ${completion.task_id}: completed (no cooldown)`);
         }
       });
       
@@ -519,12 +551,11 @@ export default function Tasks() {
       setTaskCooldowns(cooldowns);
     } catch (error: any) {
       console.error('Error loading completed tasks:', error.code, error.message);
-      throttledAddNotification({
-        type: 'error',
-        title: 'Load Failed',
-        message: 'Failed to load completed tasks.',
-        user_id: telegramId || ''
-      });
+              throttledAddNotification({
+          type: 'error',
+          title: 'Load Failed',
+          message: 'Failed to load completed tasks.'
+        });
     }
   };
 
@@ -639,23 +670,33 @@ export default function Tasks() {
           const timeSince = (Date.now() - last.completed_at.toDate().getTime()) / 1000;
           console.log('⏰ Time since last completion:', timeSince, 'seconds');
           if (task.cooldown && timeSince < task.cooldown) {
-            console.log('❌ Cooldown active, cannot complete task');
+            console.log('✅ Cooldown is active - this is expected behavior for Daily Check-in');
+            console.log('⏰ Cooldown remaining:', Math.ceil((task.cooldown - timeSince) / 3600), 'hours');
             throw new Error('Cooldown active');
           }
         }
 
-        const newBalance = (userData.balance || 0) + task.reward;
-        console.log('💰 Updating balance:', userData.balance, '+', task.reward, '=', newBalance);
+        const oldBalance = userData.balance || 0;
+        const newBalance = oldBalance + task.reward;
+        const oldTotalEarnings = userData.total_earnings || 0;
+        const newTotalEarnings = oldTotalEarnings + task.reward;
+        
+        console.log('💰 Reward Calculation:');
+        console.log('   Old Balance:', oldBalance);
+        console.log('   Task Reward:', task.reward);
+        console.log('   New Balance:', newBalance);
+        console.log('   Old Total Earnings:', oldTotalEarnings);
+        console.log('   New Total Earnings:', newTotalEarnings);
         
         transaction.update(userDocRef, {
           balance: newBalance,
-          total_earnings: (userData.total_earnings || 0) + task.reward,
+          total_earnings: newTotalEarnings,
           updated_at: serverTimestamp()
         });
         console.log('✅ User balance updated in transaction');
       });
 
-      console.log('✅ Firebase transaction completed successfully');
+            console.log('✅ Firebase transaction completed successfully');
 
       // Add task completion outside transaction
       console.log('📝 Adding task completion record...');
@@ -680,8 +721,7 @@ export default function Tasks() {
       throttledAddNotification({
         type: 'success',
         title: 'Task Completed!',
-        message: `Earned ৳${task.reward}`,
-        user_id: telegramId || ''
+        message: `Earned ৳${task.reward} from ${task.title}`
       });
 
       setTimeout(() => {
@@ -695,21 +735,30 @@ export default function Tasks() {
       console.error('❌ Error message:', error.message);
       console.error('❌ Full error object:', error);
       
+      // Handle cooldown errors specifically
+      if (error.message === 'Cooldown active') {
+        console.log('✅ Cooldown is active - this is expected behavior');
+        throttledAddNotification({
+          type: 'info',
+          title: 'Task Already Completed',
+          message: 'This task has already been completed. Please wait for the cooldown to expire.'
+        });
+        return; // Don't throw error for cooldown
+      }
+      
       // Handle index errors specifically
       if (error.code === 'failed-precondition') {
         console.log('⚠️ Firebase index not ready yet. This is normal for new deployments.');
         throttledAddNotification({
           type: 'info',
           title: 'Setting Up Database',
-          message: 'Database indexes are being created. Please wait a few minutes and try again.',
-          user_id: telegramId || ''
+          message: 'Database indexes are being created. Please wait a few minutes and try again.'
         });
       } else {
         throttledAddNotification({
           type: 'error',
           title: 'Task Completion Failed',
-          message: error.message || 'Failed to complete task.',
-          user_id: telegramId || ''
+          message: error.message || 'Failed to complete task.'
         });
       }
       throw error;
@@ -779,7 +828,7 @@ export default function Tasks() {
         type: 'success',
         title: 'UID Submitted!',
         message: 'UID submitted for approval.',
-        user_id: telegramId || ''
+
       });
 
       setTimeout(() => {
@@ -796,7 +845,7 @@ export default function Tasks() {
         type: 'error',
         title: 'Submission Failed',
         message: error.message || 'Failed to submit UID.',
-        user_id: telegramId || ''
+
       });
     } finally {
       setIsCheckingUID(false);
@@ -872,7 +921,7 @@ export default function Tasks() {
           type: 'success',
           title: 'Tasks Loaded',
           message: `Loaded ${loadedTasks.length} tasks.`,
-          user_id: telegramId || ''
+
         });
       }
     } catch (error: any) {
@@ -905,7 +954,7 @@ export default function Tasks() {
         type: 'error',
         title: 'Task Loading Failed',
         message: 'Using default tasks due to database error.',
-        user_id: telegramId || ''
+
       });
     }
   };
