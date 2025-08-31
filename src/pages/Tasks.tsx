@@ -1,10 +1,23 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Wallet, Trophy, Gift, Share2, Video, Users, MessageCircle as MessageChat, Star, Zap, Clock, CheckCircle2, TrendingUp, Calendar, Target, Award, DollarSign, CheckCircle, AlertCircle, RefreshCw, TrendingUp as TrendingUpIcon, Activity, Zap as ZapIcon } from 'lucide-react';
-import { useFirebaseUserStore } from '../store/firebaseUserStore';
+import { useUserStore } from '../store/userStore';
 import { useRealTimeUpdates } from '../hooks/useRealTimeUpdates';
 import { db } from '../lib/firebase';
-import { collection, query, orderBy, limit, getDocs, where, addDoc, updateDoc, doc, serverTimestamp } from 'firebase/firestore';
+import { 
+  collection, 
+  query, 
+  where, 
+  getDocs, 
+  addDoc, 
+  updateDoc, 
+  doc, 
+  orderBy, 
+  limit, 
+  serverTimestamp,
+  Timestamp,
+  onSnapshot
+} from 'firebase/firestore';
 
 interface Task {
   id: string; // Changed from number to string for UUID
@@ -154,7 +167,7 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onComplete, completed, cooldo
 };
 
 export default function Tasks() {
-  const { telegramId, balance, level, stats, addNotification, updateBalance } = useFirebaseUserStore();
+  const { telegramId, balance, level, stats, addNotification, updateBalance } = useUserStore();
   const [activeTab, setActiveTab] = useState<'daily' | 'social' | 'special'>('daily');
   const [completedTasks, setCompletedTasks] = useState<Set<string>>(new Set());
   const [taskCooldowns, setTaskCooldowns] = useState<Record<string, number>>({});
@@ -179,15 +192,18 @@ export default function Tasks() {
   // Enhanced tasks with dynamic data
   const [tasks, setTasks] = useState<Task[]>([]);
 
-  // Auto-refresh every minute
+  // Auto-refresh every minute and check task completions
   useEffect(() => {
     const interval = setInterval(() => {
-      if (!isUpdating) {
+      if (!isUpdating && telegramId) {
+        console.log('🔄 Auto-refreshing task data...');
         updateLiveTaskData();
+        loadCompletedTasks(); // Check for new completions
+        loadDailyCheckIn(); // Check daily check-in status
       }
-    }, 60000);
+    }, 60000); // Every minute
     return () => clearInterval(interval);
-  }, [isUpdating]);
+  }, [isUpdating, telegramId]);
 
   // Real-time task data updates
   useEffect(() => {
@@ -223,14 +239,16 @@ export default function Tasks() {
       addNotification({
         type: 'success',
         title: 'Tasks Refreshed!',
-        message: 'Tasks refreshed from database successfully! 🎉'
+        message: 'Tasks refreshed from database successfully! 🎉',
+        user_id: telegramId || ''
       });
     } catch (error) {
       console.error('Error force refreshing tasks:', error);
       addNotification({
         type: 'error',
         title: 'Refresh Failed',
-        message: 'Failed to refresh tasks from database'
+        message: 'Failed to refresh tasks from database',
+        user_id: telegramId || ''
       });
     } finally {
       setIsRefreshing(false);
@@ -250,25 +268,31 @@ export default function Tasks() {
   };
 
   useEffect(() => {
+    console.log('🚀 Tasks component mounted, loading user data...');
     loadCompletedTasks();
     loadTaskStreak();
     loadDailyCheckIn();
     loadTodayReferrals();
     startCooldownTimer();
-  }, []);
+  }, [telegramId]); // Re-run when telegramId changes
 
   const loadTaskStreak = async () => {
     if (!telegramId) return;
     
     try {
       const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-      const taskCompletionsQuery = query(
-        collection(db, 'task_completions'),
+      const taskCompletionsRef = collection(db, 'task_completions');
+      const q = query(
+        taskCompletionsRef,
         where('user_id', '==', telegramId),
-        where('created_at', '>=', sevenDaysAgo.toISOString())
+        where('created_at', '>=', Timestamp.fromDate(sevenDaysAgo))
       );
-      const taskCompletionsSnapshot = await getDocs(taskCompletionsQuery);
-      const data = taskCompletionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      
+      const querySnapshot = await getDocs(q);
+      const data = querySnapshot.docs.map(doc => ({
+        ...doc.data(),
+        created_at: doc.data().created_at?.toDate?.() || new Date()
+      }));
 
       // Calculate streak based on consecutive days
       const dates = data?.map(d => new Date(d.created_at).toDateString()) || [];
@@ -297,21 +321,22 @@ export default function Tasks() {
     if (!telegramId) return;
     
     try {
-      const today = new Date().toDateString();
-      const todayStart = new Date(today);
-      const tomorrowStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
       
-      const dailyCheckInQuery = query(
-        collection(db, 'task_completions'),
+      const taskCompletionsRef = collection(db, 'task_completions');
+      const q = query(
+        taskCompletionsRef,
         where('user_id', '==', telegramId),
         where('task_type', '==', 'daily_checkin'),
-        where('created_at', '>=', todayStart.toISOString()),
-        where('created_at', '<', tomorrowStart.toISOString())
+        where('created_at', '>=', Timestamp.fromDate(today)),
+        where('created_at', '<', Timestamp.fromDate(tomorrow))
       );
-      const dailyCheckInSnapshot = await getDocs(dailyCheckInQuery);
-      const data = dailyCheckInSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      setDailyCheckIn(data && data.length > 0);
+      const querySnapshot = await getDocs(q);
+      setDailyCheckIn(!querySnapshot.empty);
     } catch (error) {
       console.error('Error loading daily check-in:', error);
     }
@@ -321,20 +346,21 @@ export default function Tasks() {
     if (!telegramId) return;
     
     try {
-      const today = new Date().toDateString();
-      const todayStart = new Date(today);
-      const tomorrowStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+      const tomorrow = new Date(today);
+      tomorrow.setDate(tomorrow.getDate() + 1);
       
-      const referralsQuery = query(
-        collection(db, 'referrals'),
+      const referralsRef = collection(db, 'referrals');
+      const q = query(
+        referralsRef,
         where('referrer_id', '==', telegramId),
-        where('created_at', '>=', todayStart.toISOString()),
-        where('created_at', '<', tomorrowStart.toISOString())
+        where('created_at', '>=', Timestamp.fromDate(today)),
+        where('created_at', '<', Timestamp.fromDate(tomorrow))
       );
-      const referralsSnapshot = await getDocs(referralsQuery);
-      const data = referralsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      setTodayReferrals(data?.length || 0);
+      const querySnapshot = await getDocs(q);
+      setTodayReferrals(querySnapshot.size);
     } catch (error) {
       console.error('Error loading today referrals:', error);
     }
@@ -359,32 +385,82 @@ export default function Tasks() {
   const loadCompletedTasks = async () => {
     if (!telegramId) return;
 
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const completedTasksQuery = query(
-      collection(db, 'task_completions'),
-      where('user_id', '==', telegramId),
-      where('completed_at', '>=', oneDayAgo.toISOString())
-    );
-    const completedTasksSnapshot = await getDocs(completedTasksQuery);
-    const data = completedTasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
-    const completed: Set<string> = new Set();
-    const cooldowns: Record<string, number> = {};
-    
-    data.forEach(completion => {
-      completed.add(completion.task_id);
+    try {
+      console.log('🔄 Loading completed tasks for user:', telegramId);
       
-      const task = tasks.find(t => t.id === completion.task_id);
-      if (task?.cooldown) {
+      // Get all task completions for this user
+      const taskCompletionsRef = collection(db, 'task_completions');
+      const q = query(
+        taskCompletionsRef,
+        where('user_id', '==', telegramId),
+        orderBy('completed_at', 'desc')
+      );
+      
+      const querySnapshot = await getDocs(q);
+      const allCompletions = querySnapshot.docs.map(doc => ({
+        task_id: doc.data().task_id,
+        task_type: doc.data().task_type,
+        completed_at: doc.data().completed_at?.toDate?.() || new Date(),
+        reward_amount: doc.data().reward_amount || 0
+      }));
+
+      console.log('📊 Found completions:', allCompletions.length);
+
+      const completed: Set<string> = new Set();
+      const cooldowns: Record<string, number> = {};
+      const now = Date.now();
+      
+      // Process each completion
+      allCompletions.forEach(completion => {
+        const task = tasks.find(t => t.id === completion.task_id);
+        if (!task) return;
+
         const completedAt = new Date(completion.completed_at).getTime();
-        const now = Date.now();
-        const remainingCooldown = Math.max(0, task.cooldown - Math.floor((now - completedAt) / 1000));
-        cooldowns[completion.task_id] = remainingCooldown;
-      }
-    });
-    
-    setCompletedTasks(completed);
-    setTaskCooldowns(cooldowns);
+        const timeSinceCompletion = now - completedAt;
+        
+        // Handle different task types
+        if (task.type === 'checkin') {
+          // Daily check-in: Check if completed within last 24 hours
+          const twentyFourHoursAgo = now - (24 * 60 * 60 * 1000);
+          if (completedAt >= twentyFourHoursAgo) {
+            completed.add(completion.task_id);
+            const remainingCooldown = Math.max(0, 24 * 60 * 60 - Math.floor(timeSinceCompletion / 1000));
+            cooldowns[completion.task_id] = remainingCooldown;
+            console.log(`✅ Daily check-in completed within 24h, cooldown: ${remainingCooldown}s`);
+          } else {
+            console.log(`⏰ Daily check-in cooldown expired, can complete again`);
+          }
+        } else if (task.type === 'social') {
+          // Social tasks: One-time completion (lifetime)
+          completed.add(completion.task_id);
+          console.log(`✅ Social task completed (one-time): ${task.title}`);
+        } else {
+          // Other tasks: Check cooldown
+          if (task.cooldown) {
+            const remainingCooldown = Math.max(0, task.cooldown - Math.floor(timeSinceCompletion / 1000));
+            if (remainingCooldown > 0) {
+              completed.add(completion.task_id);
+              cooldowns[completion.task_id] = remainingCooldown;
+              console.log(`⏰ Task ${task.title} on cooldown: ${remainingCooldown}s`);
+            } else {
+              console.log(`✅ Task ${task.title} cooldown expired, can complete again`);
+            }
+          } else {
+            // No cooldown specified, mark as completed
+            completed.add(completion.task_id);
+            console.log(`✅ Task ${task.title} completed (no cooldown)`);
+          }
+        }
+      });
+      
+      console.log('🎯 Final completed tasks:', Array.from(completed));
+      console.log('⏰ Final cooldowns:', cooldowns);
+      
+      setCompletedTasks(completed);
+      setTaskCooldowns(cooldowns);
+    } catch (error) {
+      console.error('❌ Error loading completed tasks:', error);
+    }
   };
 
   const handleTaskAction = async (task: Task) => {
@@ -392,7 +468,8 @@ export default function Tasks() {
       addNotification({
         type: 'error',
         title: 'Login Required',
-        message: 'Please login first to complete tasks'
+        message: 'Please login first to complete tasks',
+        user_id: telegramId || ''
       });
       return;
     }
@@ -401,7 +478,8 @@ export default function Tasks() {
       addNotification({
         type: 'info',
         title: 'Task Already Completed',
-        message: 'Task already completed!'
+        message: 'Task already completed!',
+        user_id: telegramId || ''
       });
       return;
     }
@@ -410,7 +488,8 @@ export default function Tasks() {
       addNotification({
         type: 'warning',
         title: 'Cooldown Active',
-        message: `Please wait ${formatTime(taskCooldowns[task.id])} before completing this task again`
+        message: `Please wait ${formatTime(taskCooldowns[task.id])} before completing this task again`,
+        user_id: telegramId || ''
       });
       return;
     }
@@ -420,7 +499,8 @@ export default function Tasks() {
       addNotification({
         type: 'info',
         title: 'Processing Task',
-        message: 'Processing task completion...'
+        message: 'Processing task completion...',
+        user_id: telegramId || ''
       });
 
       // Handle special tasks
@@ -435,7 +515,8 @@ export default function Tasks() {
             addNotification({
               type: 'info',
               title: 'External Signup Opened',
-              message: 'External signup page opened in new tab. Complete the signup and return here to submit your UID.'
+              message: 'External signup page opened in new tab. Complete the signup and return here to submit your UID.',
+              user_id: telegramId || ''
             });
             
             // Show UID input modal after a short delay
@@ -452,7 +533,8 @@ export default function Tasks() {
           addNotification({
             type: 'info',
             title: 'Special Task',
-            message: 'Special task requires admin verification. Please contact support.'
+            message: 'Special task requires admin verification. Please contact support.',
+            user_id: telegramId || ''
           });
         }
         return;
@@ -484,7 +566,8 @@ export default function Tasks() {
       addNotification({
         type: 'error',
         title: 'Task Completion Failed',
-        message: `Failed to complete task: ${error instanceof Error ? error.message : 'Unknown error'}`
+        message: `Failed to complete task: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        user_id: telegramId || ''
       });
     }
   };
@@ -492,35 +575,63 @@ export default function Tasks() {
   // Helper function to complete tasks
   const completeTask = async (task: Task) => {
     try {
-      const completionData = {
-          user_id: telegramId,
-          task_id: task.id,
-          task_type: task.type,
-          reward_amount: task.reward,
-          completed_at: new Date().toISOString()
-      };
-
-      const completionRef = await addDoc(collection(db, 'task_completions'), completionData);
-
-      if (!completionRef) {
-        throw new Error('Failed to create task completion record');
+      console.log(`🎯 Completing task: ${task.title} (${task.type})`);
+      
+      // Check if task can be completed
+      if (task.type === 'checkin') {
+        // For daily check-in, verify 24-hour cooldown
+        const lastCompletion = Array.from(completedTasks).find(taskId => taskId === task.id);
+        if (lastCompletion) {
+          console.log('❌ Daily check-in already completed within 24h');
+          addNotification({
+            type: 'warning',
+            title: 'Daily Check-in Already Completed',
+            message: 'You have already completed daily check-in within the last 24 hours.',
+            user_id: telegramId || ''
+          });
+          return;
+        }
       }
 
+      const completionData = {
+        user_id: telegramId,
+        task_id: task.id,
+        task_type: task.type,
+        task_title: task.title,
+        reward_amount: task.reward,
+        completed_at: serverTimestamp(),
+        created_at: serverTimestamp()
+      };
+
+      console.log('💾 Saving task completion to database:', completionData);
+
+      // Add task completion to Firestore
+      const taskCompletionsRef = collection(db, 'task_completions');
+      const completionDoc = await addDoc(taskCompletionsRef, completionData);
+      
+      console.log('✅ Task completion saved with ID:', completionDoc.id);
+
       // Update user balance in database
-      try {
-        const userQuery = query(collection(db, 'users'), where('telegram_id', '==', telegramId));
-        const userSnapshot = await getDocs(userQuery);
-        if (!userSnapshot.empty) {
-          const userDoc = userSnapshot.docs[0];
-          await updateDoc(doc(db, 'users', userDoc.id), { 
-            balance: balance + task.reward,
-            updated_at: serverTimestamp()
-          });
-          // Update store balance
-          await updateBalance(task.reward);
-        }
-      } catch (balanceError) {
-        console.error('Balance update error:', balanceError);
+      const usersRef = collection(db, 'users');
+      const userQuery = query(usersRef, where('telegram_id', '==', telegramId));
+      const userSnapshot = await getDocs(userQuery);
+      
+      if (!userSnapshot.empty) {
+        const userDoc = userSnapshot.docs[0];
+        const userData = userDoc.data();
+        const currentBalance = userData.balance || 0;
+        const newBalance = currentBalance + task.reward;
+        
+        await updateDoc(doc(db, 'users', userDoc.id), {
+          balance: newBalance,
+          total_earnings: (userData.total_earnings || 0) + task.reward,
+          updated_at: serverTimestamp()
+        });
+        
+        console.log(`💰 Balance updated: ${currentBalance} → ${newBalance}`);
+        
+        // Update store balance
+        await updateBalance(task.reward);
       }
 
       // Update local state
@@ -532,13 +643,15 @@ export default function Tasks() {
           ...prev,
           [task.id]: task.cooldown!
         }));
+        console.log(`⏰ Set cooldown for ${task.title}: ${task.cooldown}s`);
       }
 
       // Show success notification
       addNotification({
         type: 'success',
         title: 'Task Completed! 🎉',
-        message: `Task completed! Earned ৳${task.reward}`
+        message: `Task completed! Earned ৳${task.reward}`,
+        user_id: telegramId || ''
       });
 
       // Update task completion count
@@ -547,6 +660,8 @@ export default function Tasks() {
         newCounts[task.id] = (prev[task.id] || 0) + 1;
         return newCounts;
       });
+
+      console.log('🔄 Refreshing task data...');
 
       // Refresh user data after a short delay
       setTimeout(() => {
@@ -558,6 +673,7 @@ export default function Tasks() {
       }, 1000);
 
     } catch (error) {
+      console.error('❌ Error completing task:', error);
       throw error;
     }
   };
@@ -637,18 +753,13 @@ export default function Tasks() {
     if (!tradingUID.trim()) return;
 
     try {
-      const activityData = {
+      const userActivitiesRef = collection(db, 'user_activities');
+      await addDoc(userActivitiesRef, {
         user_id: telegramId,
         activity_type: 'trading_uid',
         activity_data: JSON.stringify({ uid: tradingUID, status: 'pending' }),
-        created_at: new Date().toISOString()
-      };
-      
-      const activityRef = await addDoc(collection(db, 'user_activities'), activityData);
-
-      if (!activityRef) {
-        throw new Error('Failed to create activity record');
-      }
+        created_at: serverTimestamp()
+      });
 
       setTradingStatus('pending');
       setTradingSubmissionTime(new Date().toISOString());
@@ -678,7 +789,8 @@ export default function Tasks() {
           addNotification({
             type: 'error',
             title: 'UID Already Used',
-            message: 'This UID has already been used by another user. Each UID can only be used once in the entire system.'
+            message: 'This UID has already been used by another user. Each UID can only be used once in the entire system.',
+            user_id: telegramId || ''
           });
           return;
         } else if (globalUIDCheck.isCurrentUser) {
@@ -686,11 +798,12 @@ export default function Tasks() {
           const submission = globalUIDCheck.submission;
           
           if (submission.status === 'pending') {
-            addNotification({
-              type: 'warning',
-              title: 'UID Already Submitted',
-              message: 'This UID is already submitted and pending admin approval.'
-            });
+                       addNotification({
+             type: 'warning',
+             title: 'UID Already Submitted',
+             message: 'This UID is already submitted and pending admin approval.',
+             user_id: telegramId || ''
+           });
             return;
           } else if (submission.status === 'verified') {
             addNotification({
@@ -718,26 +831,23 @@ export default function Tasks() {
       });
 
       // Insert into special task submissions table
-      const submissionData = {
+      const specialTaskSubmissionsRef = collection(db, 'special_task_submissions');
+      const docRef = await addDoc(specialTaskSubmissionsRef, {
         user_id: telegramId,
         task_id: currentSpecialTask.id,
         task_type: currentSpecialTask.type,
         uid_submitted: specialTaskUID.trim(),
         status: 'pending',
         reward_amount: currentSpecialTask.reward,
-        created_at: new Date().toISOString()
-      };
-      
-      const submissionRef = await addDoc(collection(db, 'special_task_submissions'), submissionData);
+        created_at: serverTimestamp()
+      });
 
-      if (!submissionRef) {
-        throw new Error('Failed to create submission record');
-      }
+      const data = { id: docRef.id };
 
       // Update local state with submission details
       setSpecialTaskStatus('pending');
       setSpecialTaskSubmissionTime(new Date().toISOString());
-      setSpecialTaskSubmissionId(submissionRef.id);
+      setSpecialTaskSubmissionId(data.id);
       
       // Show success notification
       addNotification({
@@ -945,49 +1055,53 @@ export default function Tasks() {
       addNotification({
         type: 'error',
         title: 'No Telegram ID',
-        message: 'No telegram ID found'
+        message: 'No telegram ID found',
+        user_id: ''
       });
       return;
     }
 
     try {
       // Test user data fetch
-      const userQuery = query(collection(db, 'users'), where('telegram_id', '==', telegramId));
+      const usersRef = collection(db, 'users');
+      const userQuery = query(usersRef, where('telegram_id', '==', telegramId));
       const userSnapshot = await getDocs(userQuery);
-      
+
       if (userSnapshot.empty) {
         console.error('User not found');
         addNotification({
           type: 'error',
           title: 'User Error',
-          message: 'User not found in database'
+          message: 'User not found in database',
+          user_id: telegramId
         });
         return;
       }
-      
-      const userData = userSnapshot.docs[0].data();
 
+      const userData = userSnapshot.docs[0].data();
       console.log('User data:', userData);
       addNotification({
         type: 'success',
         title: 'Database Connected',
-        message: `Database connected! User: ${userData.first_name || 'Unknown'}`
+        message: `Database connected! User: ${userData.first_name || 'Unknown'}`,
+        user_id: telegramId
       });
 
       // Test task completions table
+      const taskCompletionsRef = collection(db, 'task_completions');
       const completionsQuery = query(
-        collection(db, 'task_completions'),
+        taskCompletionsRef,
         where('user_id', '==', telegramId),
         limit(5)
       );
       const completionsSnapshot = await getDocs(completionsQuery);
-      const completions = completionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      
-      console.log('Task completions:', completions);
+
+      console.log('Task completions:', completionsSnapshot.docs.map(doc => doc.data()));
       addNotification({
         type: 'info',
         title: 'Task Completions Found',
-        message: `Found ${completions?.length || 0} task completions`
+        message: `Found ${completionsSnapshot.size} task completions`,
+        user_id: telegramId
       });
 
     } catch (error) {
@@ -995,7 +1109,8 @@ export default function Tasks() {
       addNotification({
         type: 'error',
         title: 'Database Test Failed',
-        message: `Database test failed: ${error instanceof Error ? error.message : 'Unknown error'}`
+        message: `Database test failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        user_id: telegramId
       });
     }
   };
@@ -1036,71 +1151,37 @@ export default function Tasks() {
     if (isSyncing) return;
     
     setIsSyncing(true);
-    let taskTemplates: any[] = []; // Declare at function level
-    
     try {
-      // First try to get all active tasks without ordering
-      let taskTemplatesQuery = query(
-        collection(db, 'task_templates'),
-        where('is_active', '==', true)
+      const taskTemplatesRef = collection(db, 'task_templates');
+      const q = query(
+        taskTemplatesRef,
+        where('is_active', '==', true),
+        orderBy('updated_at', 'desc')
       );
       
-      try {
-        const taskTemplatesSnapshot = await getDocs(taskTemplatesQuery);
-        taskTemplates = taskTemplatesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
-        console.log('Raw task templates from Firestore (sync):', taskTemplates);
-        console.log('Number of tasks found (sync):', taskTemplates.length);
-        
-        // If no tasks found with is_active filter, try getting all tasks
-        if (taskTemplates.length === 0) {
-          console.log('No tasks found with is_active filter, trying to get all tasks...');
-          const allTasksSnapshot = await getDocs(collection(db, 'task_templates'));
-          taskTemplates = allTasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          console.log('All tasks found (sync):', taskTemplates);
-        }
-        
-        // Sort manually if needed
-        if (taskTemplates.length > 0) {
-          taskTemplates.sort((a, b) => {
-            const aDate = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-            const bDate = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-            return bDate - aDate; // Descending order
-          });
-        }
-      } catch (error) {
-        console.error('Error in inner query (sync):', error);
-        // If inner query fails, try to get all tasks without filter
-        try {
-          const allTasksSnapshot = await getDocs(collection(db, 'task_templates'));
-          taskTemplates = allTasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          console.log('Fallback (sync): All tasks found:', taskTemplates);
-        } catch (fallbackError) {
-          console.error('Fallback query also failed (sync):', fallbackError);
-          taskTemplates = [];
-        }
-      }
+      const querySnapshot = await getDocs(q);
+      const taskTemplates = querySnapshot.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data()
+      }));
 
       if (taskTemplates && taskTemplates.length > 0) {
-        const formattedTasks: Task[] = taskTemplates.map(template => {
-          console.log('Processing template in sync:', template); // Debug log
-          return {
-            id: template.id,
-            title: template.title,
-            subtitle: template.subtitle || '',
-            reward: template.reward,
-            type: template.type,
-            icon: template.icon || 'gift',
-            buttonText: template.button_text || 'COMPLETE',
-            cooldown: template.cooldown || 0,
-            description: template.description || '',
-            isActive: template.is_active !== false, // Explicit boolean check
-            completionCount: 0,
-            maxCompletions: template.max_completions || 1,
-            url: template.url || '',
-            special: template.type === 'trading_platform' || template.type === 'referral'
-          };
-        });
+        const formattedTasks: Task[] = taskTemplates.map(template => ({
+          id: template.id,
+          title: template.title,
+          subtitle: template.subtitle || '',
+          reward: template.reward,
+          type: template.type,
+          icon: template.icon || 'gift',
+          buttonText: template.button_text || 'COMPLETE',
+          cooldown: template.cooldown || 0,
+          description: template.description || '',
+          isActive: template.is_active || true,
+          completionCount: 0,
+          maxCompletions: template.max_completions || 1,
+          url: template.url || '',
+          special: template.type === 'trading_platform' || template.type === 'referral'
+        }));
         
         // Check if tasks have changed
         const currentTaskIds = tasks.map(t => t.id).sort().join(',');
@@ -1176,71 +1257,31 @@ export default function Tasks() {
 
   // Load tasks from database
   const loadTasksFromDatabase = async () => {
-    let taskTemplates: any[] = []; // Declare at function level
-    
     try {
-      // First try to get all active tasks without ordering
-      let taskTemplatesQuery = query(
+      const taskTemplatesQuery = query(
         collection(db, 'task_templates'),
         where('is_active', '==', true)
       );
-      
-      try {
-        const taskTemplatesSnapshot = await getDocs(taskTemplatesQuery);
-        taskTemplates = taskTemplatesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-        
-        console.log('Raw task templates from Firestore (load):', taskTemplates);
-        console.log('Number of tasks found (load):', taskTemplates.length);
-        
-        // If no tasks found with is_active filter, try getting all tasks
-        if (taskTemplates.length === 0) {
-          console.log('No tasks found with is_active filter, trying to get all tasks...');
-          const allTasksSnapshot = await getDocs(collection(db, 'task_templates'));
-          taskTemplates = allTasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          console.log('All tasks found:', taskTemplates);
-        }
-        
-        // Sort manually if needed
-        if (taskTemplates.length > 0) {
-          taskTemplates.sort((a, b) => {
-            const aDate = a.updated_at ? new Date(a.updated_at).getTime() : 0;
-            const bDate = b.updated_at ? new Date(b.updated_at).getTime() : 0;
-            return bDate - aDate; // Descending order
-          });
-        }
-      } catch (error) {
-        console.error('Error in inner query (load):', error);
-        // If inner query fails, try to get all tasks without filter
-        try {
-          const allTasksSnapshot = await getDocs(collection(db, 'task_templates'));
-          taskTemplates = allTasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-          console.log('Fallback (load): All tasks found:', taskTemplates);
-        } catch (fallbackError) {
-          console.error('Fallback query also failed (load):', fallbackError);
-          taskTemplates = [];
-        }
-      }
+      const taskTemplatesSnapshot = await getDocs(taskTemplatesQuery);
+      const taskTemplates = taskTemplatesSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
 
       if (taskTemplates && taskTemplates.length > 0) {
-        const formattedTasks: Task[] = taskTemplates.map(template => {
-          console.log('Processing template in load:', template); // Debug log
-          return {
-            id: template.id,
-            title: template.title,
-            subtitle: template.subtitle || '',
-            reward: template.reward,
-            type: template.type,
-            icon: template.icon || 'gift',
-            buttonText: template.button_text || 'COMPLETE',
-            cooldown: template.cooldown || 0,
-            description: template.description || '',
-            isActive: template.is_active !== false, // Explicit boolean check
-            completionCount: 0,
-            maxCompletions: template.max_completions || 1,
-            url: template.url || '',
-            special: template.type === 'trading_platform' || template.type === 'referral'
-          };
-        });
+        const formattedTasks: Task[] = taskTemplates.map(template => ({
+          id: template.id,
+          title: template.title,
+          subtitle: template.subtitle || '',
+          reward: template.reward,
+          type: template.type,
+          icon: template.icon || 'gift',
+          buttonText: template.button_text || 'COMPLETE',
+          cooldown: template.cooldown || 0,
+          description: template.description || '',
+          isActive: template.is_active || true,
+          completionCount: 0,
+          maxCompletions: template.max_completions || 1,
+          url: template.url || '',
+          special: template.type === 'trading_platform' || template.type === 'referral'
+        }));
         
         setTasks(formattedTasks);
         setLastTaskUpdate(new Date());
@@ -1256,7 +1297,7 @@ export default function Tasks() {
             id: '1',
             title: 'Daily Check-in',
             subtitle: 'Complete daily check-in to earn real money',
-            reward: 50,
+            reward: 2,
             type: 'checkin',
             icon: 'checkin',
             buttonText: 'CHECK IN',
@@ -1296,19 +1337,7 @@ export default function Tasks() {
 
   // Load tasks when component mounts
   useEffect(() => {
-    console.log('Tasks component mounted, loading tasks...');
     loadTasksFromDatabase();
-    
-    // Also test basic Firestore access
-    const testFirestoreAccess = async () => {
-      try {
-        const testSnapshot = await getDocs(collection(db, 'task_templates'));
-        console.log('Firestore access test successful, total documents:', testSnapshot.size);
-      } catch (error) {
-        console.error('Firestore access test failed:', error);
-      }
-    };
-    testFirestoreAccess();
   }, []);
 
   // Check UID availability in real-time
