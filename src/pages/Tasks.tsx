@@ -67,7 +67,14 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onComplete, completed, cooldo
   const getButtonText = () => {
     if (isCompleting) return 'Processing...';
     if (completed) return '✓ Completed';
-    if (cooldown > 0) return `⏰ ${Math.floor(cooldown / 60)}m ${cooldown % 60}s`;
+    if (cooldown > 0) {
+      if (task.type === 'checkin') {
+        const hours = Math.floor(cooldown / 3600);
+        const minutes = Math.floor((cooldown % 3600) / 60);
+        return `⏰ ${hours}h ${minutes}m`;
+      }
+      return `⏰ ${Math.floor(cooldown / 60)}m ${cooldown % 60}s`;
+    }
     if (isSpecial) return 'Sign Up'; // Changed from task.buttonText to 'Sign Up'
     return task.buttonText;
   };
@@ -108,6 +115,12 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onComplete, completed, cooldo
           <div>
             <h3 className="font-semibold text-white">{task.title}</h3>
             <p className="text-sm text-gray-400">{task.subtitle}</p>
+            {task.type === 'checkin' && completed && (
+              <p className="text-xs text-green-400 flex items-center gap-1">
+                <CheckCircle className="w-3 h-3" />
+                Completed today - Come back tomorrow!
+              </p>
+            )}
             {task.completionCount !== undefined && task.maxCompletions && (
               <p className="text-xs text-gold">
                 {task.completionCount}/{task.maxCompletions} completed today
@@ -297,21 +310,39 @@ export default function Tasks() {
     if (!telegramId) return;
     
     try {
-      const today = new Date().toDateString();
-      const todayStart = new Date(today);
-      const tomorrowStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      // Check for daily check-in completion in the last 24 hours
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       
       const dailyCheckInQuery = query(
         collection(db, 'task_completions'),
         where('user_id', '==', telegramId),
         where('task_type', '==', 'daily_checkin'),
-        where('created_at', '>=', todayStart.toISOString()),
-        where('created_at', '<', tomorrowStart.toISOString())
+        where('completed_at', '>=', twentyFourHoursAgo.toISOString())
       );
       const dailyCheckInSnapshot = await getDocs(dailyCheckInQuery);
       const data = dailyCheckInSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      setDailyCheckIn(data && data.length > 0);
+      // Check if user has completed daily check-in in the last 24 hours
+      const hasCompletedToday = data && data.length > 0;
+      setDailyCheckIn(hasCompletedToday);
+      
+      // If completed today, set cooldown for the daily check-in task
+      if (hasCompletedToday && data.length > 0) {
+        const lastCompletion = data[0];
+        const completedAt = new Date(lastCompletion.completed_at).getTime();
+        const now = Date.now();
+        const remainingCooldown = Math.max(0, 86400 - Math.floor((now - completedAt) / 1000));
+        
+        setTaskCooldowns(prev => ({
+          ...prev,
+          '1': remainingCooldown // Task ID '1' is the daily check-in task
+        }));
+        
+        // Mark as completed
+        setCompletedTasks(prev => new Set([...prev, '1']));
+      }
+      
+      console.log('Daily check-in status:', hasCompletedToday);
     } catch (error) {
       console.error('Error loading daily check-in:', error);
     }
@@ -470,9 +501,40 @@ export default function Tasks() {
         return;
       }
 
-      // Handle daily check-in
+      // Handle daily check-in with 24-hour restriction
       if (task.type === 'checkin') {
+        // Check if user has already completed daily check-in in the last 24 hours
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const dailyCheckInQuery = query(
+          collection(db, 'task_completions'),
+          where('user_id', '==', telegramId),
+          where('task_type', '==', 'daily_checkin'),
+          where('completed_at', '>=', twentyFourHoursAgo.toISOString())
+        );
+        const dailyCheckInSnapshot = await getDocs(dailyCheckInQuery);
+        
+        if (!dailyCheckInSnapshot.empty) {
+          addNotification({
+            type: 'warning',
+            title: 'Daily Check-in Already Completed',
+            message: 'You have already completed daily check-in in the last 24 hours. Please wait until tomorrow.'
+          });
+          return;
+        }
+        
+        // Complete the daily check-in task
         await completeTask(task);
+        
+        // Update daily check-in status
+        setDailyCheckIn(true);
+        
+        // Show special success message for daily check-in
+        addNotification({
+          type: 'success',
+          title: 'Daily Check-in Completed! 🎉',
+          message: `Daily check-in completed! Earned ৳${task.reward}. Come back tomorrow for your next check-in!`
+        });
+        
         return;
       }
 
@@ -506,19 +568,9 @@ export default function Tasks() {
         throw new Error('Failed to create task completion record');
       }
 
-      // Update user balance in database
+      // Update user balance using store function (handles both database and local state)
       try {
-        const userQuery = query(collection(db, 'users'), where('telegram_id', '==', telegramId));
-        const userSnapshot = await getDocs(userQuery);
-        if (!userSnapshot.empty) {
-          const userDoc = userSnapshot.docs[0];
-          await updateDoc(doc(db, 'users', userDoc.id), { 
-            balance: balance + task.reward,
-            updated_at: serverTimestamp()
-          });
-          // Update store balance
-          await updateBalance(task.reward);
-        }
+        await updateBalance(task.reward);
       } catch (balanceError) {
         console.error('Balance update error:', balanceError);
       }
