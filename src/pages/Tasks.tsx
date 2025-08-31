@@ -551,11 +551,79 @@ export default function Tasks() {
       setTaskCooldowns(cooldowns);
     } catch (error: any) {
       console.error('Error loading completed tasks:', error.code, error.message);
-              throttledAddNotification({
-          type: 'error',
-          title: 'Load Failed',
-          message: 'Failed to load completed tasks.'
-        });
+      
+      // If index error, try without orderBy
+      if (error.code === 'failed-precondition') {
+        console.log('⚠️ Index not ready, trying without orderBy...');
+        try {
+          const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+          const q2 = query(
+            collection(db, 'task_completions'),
+            where('user_id', '==', telegramId),
+            where('completed_at', '>=', Timestamp.fromDate(sevenDaysAgo)),
+            limit(100)
+          );
+          
+          const querySnapshot2 = await getDocs(q2);
+          console.log('📊 Found', querySnapshot2.size, 'completions (without orderBy)');
+          
+          const allCompletions = querySnapshot2.docs.map(doc => ({
+            task_id: doc.data().task_id,
+            task_type: doc.data().task_type,
+            completed_at: doc.data().completed_at?.toDate?.() || new Date(),
+            reward_amount: doc.data().reward_amount || 0
+          }));
+
+          const completed = new Set<string>();
+          const cooldowns: Record<string, number> = {};
+          const now = Date.now();
+          
+          const latestCompletions = allCompletions.reduce((acc, completion) => {
+            if (!acc[completion.task_id] || acc[completion.task_id].completed_at < completion.completed_at) {
+              acc[completion.task_id] = completion;
+            }
+            return acc;
+          }, {} as Record<string, typeof allCompletions[0]>);
+
+          Object.values(latestCompletions).forEach(completion => {
+            const task = tasks.find(t => t.id === completion.task_id);
+            if (!task) return;
+
+            const completedAt = new Date(completion.completed_at).getTime();
+            const timeSinceCompletion = (now - completedAt) / 1000;
+            
+            console.log(`📊 Task ${completion.task_id}: completed ${timeSinceCompletion}s ago, cooldown: ${task.cooldown}s`);
+            
+            if (task.cooldown) {
+              const remainingCooldown = Math.max(0, task.cooldown - timeSinceCompletion);
+              if (remainingCooldown > 0) {
+                completed.add(completion.task_id);
+                cooldowns[completion.task_id] = remainingCooldown;
+                console.log(`⏰ Task ${completion.task_id}: ${remainingCooldown}s cooldown remaining`);
+              } else {
+                console.log(`✅ Task ${completion.task_id}: cooldown expired`);
+              }
+            } else {
+              completed.add(completion.task_id);
+              console.log(`✅ Task ${completion.task_id}: completed (no cooldown)`);
+            }
+          });
+          
+          console.log('📊 Setting completed tasks:', Array.from(completed));
+          console.log('⏰ Setting cooldowns:', cooldowns);
+          setCompletedTasks(completed);
+          setTaskCooldowns(cooldowns);
+          return;
+        } catch (fallbackError: any) {
+          console.error('Fallback query also failed:', fallbackError.code, fallbackError.message);
+        }
+      }
+      
+      throttledAddNotification({
+        type: 'error',
+        title: 'Load Failed',
+        message: 'Failed to load completed tasks.'
+      });
     }
   };
 
@@ -1102,20 +1170,7 @@ export default function Tasks() {
               </button>
             ))}
             
-            {/* Debug button */}
-            <button
-              onClick={() => {
-                console.log('🔍 Debug Info:');
-                console.log('Tasks:', tasks);
-                console.log('Completed:', Array.from(completedTasks));
-                console.log('Cooldowns:', taskCooldowns);
-                console.log('Daily task:', tasks.find(t => t.type === 'checkin'));
-              }}
-              className="px-4 py-2 rounded-full bg-red-500 text-white text-xs"
-              title="Debug Info"
-            >
-              Debug
-            </button>
+
           </div>
 
           <AnimatePresence>
@@ -1127,18 +1182,32 @@ export default function Tasks() {
               transition={{ duration: 0.2 }}
               className="space-y-4"
             >
-              {filteredTasks.map((task) => (
-                <TaskCard
-                  key={task.id}
-                  task={task}
-                  onComplete={() => handleTaskAction(task)}
-                  completed={completedTasks.has(task.id)}
-                  cooldown={taskCooldowns[task.id] || 0}
-                  isSpecial={task.special}
-                  onSpecialTaskClick={() => handleTaskAction(task)}
-                  isLive={isLive}
-                />
-              ))}
+              {filteredTasks.map((task) => {
+                const isCompleted = completedTasks.has(task.id);
+                const cooldownValue = taskCooldowns[task.id] || 0;
+                
+                // Debug logging for each task
+                if (task.type === 'checkin') {
+                  console.log('🎯 TaskCard Render - ' + task.id + ':');
+                  console.log('   • completed: ' + isCompleted);
+                  console.log('   • cooldown: ' + cooldownValue + 's (' + (cooldownValue/3600).toFixed(2) + 'h)');
+                  console.log('   • buttonDisabled: ' + (isCompleted || cooldownValue > 0));
+                  console.log('   • buttonText: ' + (isCompleted && cooldownValue > 0 ? '⏰ Countdown' : isCompleted ? '✓ Done' : 'CHECK IN'));
+                }
+                
+                return (
+                  <TaskCard
+                    key={task.id}
+                    task={task}
+                    onComplete={() => handleTaskAction(task)}
+                    completed={isCompleted}
+                    cooldown={cooldownValue}
+                    isSpecial={task.special}
+                    onSpecialTaskClick={() => handleTaskAction(task)}
+                    isLive={isLive}
+                  />
+                );
+              })}
             </motion.div>
           </AnimatePresence>
 
