@@ -289,6 +289,18 @@ export default function Tasks() {
         Object.keys(newCooldowns).forEach(taskId => {
           if (newCooldowns[taskId] > 0) {
             newCooldowns[taskId]--;
+            
+            // If cooldown reaches 0, remove from completed tasks for daily check-in
+            if (newCooldowns[taskId] <= 0) {
+              const task = tasks.find(t => t.id === taskId);
+              if (task && task.type === 'checkin') {
+                setCompletedTasks(prev => {
+                  const newCompleted = new Set(prev);
+                  newCompleted.delete(taskId);
+                  return newCompleted;
+                });
+              }
+            }
           }
         });
         return newCooldowns;
@@ -296,7 +308,7 @@ export default function Tasks() {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, []);
+  }, [tasks]);
 
   // Reload completed tasks when tasks are loaded
   useEffect(() => {
@@ -457,6 +469,12 @@ export default function Tasks() {
           // Calculate remaining cooldown
           const remainingCooldown = Math.max(0, 86400 - Math.floor((now.getTime() - completedAt.getTime()) / 1000));
           cooldowns[taskId] = remainingCooldown;
+          
+          // If cooldown is 0, remove from completed tasks (24 hours passed)
+          if (remainingCooldown <= 0) {
+            completed.delete(taskId);
+            delete cooldowns[taskId];
+          }
         }
       } else if (task.type === 'social') {
         // Social tasks: One-time completion (lifetime)
@@ -485,9 +503,8 @@ export default function Tasks() {
       return;
     }
 
-    // For daily check-in tasks, we don't check completedTasks.has(task.id) here
-    // because daily check-in can be completed once every 24 hours
-    if (task.type !== 'checkin' && completedTasks.has(task.id)) {
+    // Check if task is already completed (for all task types including daily check-in)
+    if (completedTasks.has(task.id)) {
       addNotification({
         type: 'info',
         title: 'Task Already Completed',
@@ -1080,7 +1097,8 @@ export default function Tasks() {
       console.log('Daily check-in task ID:', dailyCheckInTask.id);
       console.log('Is daily check-in completed:', completedTasks.has(dailyCheckInTask.id));
       console.log('Daily check-in cooldown:', taskCooldowns[dailyCheckInTask.id]);
-      console.log('Daily check-in button should be enabled:', !completedTasks.has(dailyCheckInTask.id) || dailyCheckInTask.type === 'checkin');
+      console.log('Daily check-in button should be enabled:', !completedTasks.has(dailyCheckInTask.id));
+      console.log('Daily check-in button text:', completedTasks.has(dailyCheckInTask.id) ? 'Done' : dailyCheckInTask.buttonText);
     }
     console.log('========================');
   };
@@ -1929,33 +1947,20 @@ export default function Tasks() {
                       e.stopPropagation();
                       handleTaskAction(task);
                     }}
-                    disabled={task.type === 'checkin' ? false : completedTasks.has(task.id)}
+                    disabled={completedTasks.has(task.id)}
                     className={`px-4 py-1.5 rounded-lg font-medium transition-all duration-300 ${
-                      task.type === 'checkin' ? 
-                        'bg-purple-500 text-white hover:bg-purple-600 hover:shadow-lg hover:shadow-purple-500/20' :
-                        completedTasks.has(task.id)
-                          ? 'bg-gray-700/50 text-gray-500'
-                          : 'bg-purple-500 text-white hover:bg-purple-600 hover:shadow-lg hover:shadow-purple-500/20'
+                      completedTasks.has(task.id)
+                        ? 'bg-gray-700/50 text-gray-500 cursor-not-allowed'
+                        : 'bg-purple-500 text-white hover:bg-purple-600 hover:shadow-lg hover:shadow-purple-500/20'
                     }`}
                   >
-                    {task.type === 'checkin' ? (
-                      completedTasks.has(task.id) ? (
-                        <div className="flex items-center space-x-1">
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>Completed Today</span>
-                        </div>
-                      ) : (
-                        task.buttonText
-                      )
+                    {completedTasks.has(task.id) ? (
+                      <div className="flex items-center space-x-1">
+                        <CheckCircle2 className="w-4 h-4" />
+                        <span>Done</span>
+                      </div>
                     ) : (
-                      completedTasks.has(task.id) ? (
-                        <div className="flex items-center space-x-1">
-                          <CheckCircle2 className="w-4 h-4" />
-                          <span>Done</span>
-                        </div>
-                      ) : (
-                        task.special ? 'Sign Up' : task.buttonText
-                      )
+                      task.special ? 'Sign Up' : task.buttonText
                     )}
                   </button>
                 )}
