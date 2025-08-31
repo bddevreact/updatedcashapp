@@ -66,8 +66,19 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onComplete, completed, cooldo
 
   const getButtonText = () => {
     if (isCompleting) return 'Processing...';
-    if (completed) return '✓ Completed';
-    if (cooldown > 0) return `⏰ ${Math.floor(cooldown / 60)}m ${cooldown % 60}s`;
+    if (completed) {
+      if (task.type === 'checkin') return '✓ Completed Today';
+      if (task.type === 'social') return '✓ Completed';
+      return '✓ Completed';
+    }
+    if (cooldown > 0) {
+      if (task.type === 'checkin') {
+        const hours = Math.floor(cooldown / 3600);
+        const minutes = Math.floor((cooldown % 3600) / 60);
+        return `⏰ ${hours}h ${minutes}m`;
+      }
+      return `⏰ ${Math.floor(cooldown / 60)}m ${cooldown % 60}s`;
+    }
     if (isSpecial) return 'Sign Up'; // Changed from task.buttonText to 'Sign Up'
     return task.buttonText;
   };
@@ -108,6 +119,18 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onComplete, completed, cooldo
           <div>
             <h3 className="font-semibold text-white">{task.title}</h3>
             <p className="text-sm text-gray-400">{task.subtitle}</p>
+            {task.type === 'checkin' && completed && (
+              <p className="text-xs text-green-400 flex items-center gap-1">
+                <CheckCircle className="w-3 h-3" />
+                Completed today - Come back tomorrow!
+              </p>
+            )}
+            {task.type === 'social' && completed && (
+              <p className="text-xs text-blue-400 flex items-center gap-1">
+                <CheckCircle className="w-3 h-3" />
+                Completed - One-time task
+              </p>
+            )}
             {task.completionCount !== undefined && task.maxCompletions && (
               <p className="text-xs text-gold">
                 {task.completionCount}/{task.maxCompletions} completed today
@@ -250,12 +273,37 @@ export default function Tasks() {
   };
 
   useEffect(() => {
-    loadCompletedTasks();
-    loadTaskStreak();
-    loadDailyCheckIn();
-    loadTodayReferrals();
-    startCooldownTimer();
+    if (telegramId) {
+      loadCompletedTasks();
+      loadTaskStreak();
+      loadDailyCheckIn();
+      loadTodayReferrals();
+    }
+  }, [telegramId]);
+
+  // Separate useEffect for cooldown timer
+  useEffect(() => {
+    const interval = setInterval(() => {
+      setTaskCooldowns(prev => {
+        const newCooldowns = { ...prev };
+        Object.keys(newCooldowns).forEach(taskId => {
+          if (newCooldowns[taskId] > 0) {
+            newCooldowns[taskId]--;
+          }
+        });
+        return newCooldowns;
+      });
+    }, 1000);
+
+    return () => clearInterval(interval);
   }, []);
+
+  // Reload completed tasks when tasks are loaded
+  useEffect(() => {
+    if (tasks.length > 0 && telegramId) {
+      loadCompletedTasks();
+    }
+  }, [tasks, telegramId]);
 
   const loadTaskStreak = async () => {
     if (!telegramId) return;
@@ -265,13 +313,13 @@ export default function Tasks() {
       const taskCompletionsQuery = query(
         collection(db, 'task_completions'),
         where('user_id', '==', telegramId),
-        where('created_at', '>=', sevenDaysAgo.toISOString())
+        where('completed_at', '>=', sevenDaysAgo.toISOString())
       );
       const taskCompletionsSnapshot = await getDocs(taskCompletionsQuery);
-      const data = taskCompletionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const data = taskCompletionsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Array<{ id: string; completed_at: string; task_id: string }>;
 
       // Calculate streak based on consecutive days
-      const dates = data?.map(d => new Date(d.created_at).toDateString()) || [];
+      const dates = data?.map(d => new Date(d.completed_at).toDateString()) || [];
       const uniqueDates = [...new Set(dates)];
       const sortedDates = uniqueDates.sort((a, b) => new Date(b).getTime() - new Date(a).getTime());
       
@@ -297,21 +345,44 @@ export default function Tasks() {
     if (!telegramId) return;
     
     try {
-      const today = new Date().toDateString();
-      const todayStart = new Date(today);
-      const tomorrowStart = new Date(Date.now() + 24 * 60 * 60 * 1000);
+      // Check for daily check-in completion in the last 24 hours
+      const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
       
       const dailyCheckInQuery = query(
         collection(db, 'task_completions'),
         where('user_id', '==', telegramId),
-        where('task_type', '==', 'daily_checkin'),
-        where('created_at', '>=', todayStart.toISOString()),
-        where('created_at', '<', tomorrowStart.toISOString())
+        where('task_type', '==', 'checkin'),
+        where('completed_at', '>=', twentyFourHoursAgo.toISOString())
       );
       const dailyCheckInSnapshot = await getDocs(dailyCheckInQuery);
-      const data = dailyCheckInSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      const data = dailyCheckInSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Array<{ id: string; completed_at: string; task_id: string }>;
       
-      setDailyCheckIn(data && data.length > 0);
+      // Check if user has completed daily check-in in the last 24 hours
+      const hasCompletedToday = data && data.length > 0;
+      setDailyCheckIn(hasCompletedToday);
+      
+      // If completed today, set cooldown for the daily check-in task
+      if (hasCompletedToday && data.length > 0) {
+        const lastCompletion = data[0];
+        const completedAt = new Date(lastCompletion.completed_at).getTime();
+        const now = Date.now();
+        const remainingCooldown = Math.max(0, 86400 - Math.floor((now - completedAt) / 1000));
+        
+        // Find the daily check-in task by type instead of hardcoded ID
+        const dailyCheckInTask = tasks.find(t => t.type === 'checkin');
+        if (dailyCheckInTask) {
+          setTaskCooldowns(prev => ({
+            ...prev,
+            [dailyCheckInTask.id]: remainingCooldown
+          }));
+          
+          // For daily check-in tasks, we don't mark them as permanently completed
+          // They should only be marked as completed when they're in cooldown
+          // The loadCompletedTasks function will handle this properly
+        }
+      }
+      
+      console.log('Daily check-in status:', hasCompletedToday);
     } catch (error) {
       console.error('Error loading daily check-in:', error);
     }
@@ -340,46 +411,63 @@ export default function Tasks() {
     }
   };
 
-  const startCooldownTimer = () => {
-    const interval = setInterval(() => {
-      setTaskCooldowns(prev => {
-        const newCooldowns = { ...prev };
-        Object.keys(newCooldowns).forEach(taskId => {
-          if (newCooldowns[taskId] > 0) {
-            newCooldowns[taskId]--;
-          }
-        });
-        return newCooldowns;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  };
+  // startCooldownTimer function removed - now handled in useEffect
 
   const loadCompletedTasks = async () => {
     if (!telegramId) return;
 
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const completedTasksQuery = query(
-      collection(db, 'task_completions'),
-      where('user_id', '==', telegramId),
-      where('completed_at', '>=', oneDayAgo.toISOString())
-    );
-    const completedTasksSnapshot = await getDocs(completedTasksQuery);
-    const data = completedTasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-
     const completed: Set<string> = new Set();
     const cooldowns: Record<string, number> = {};
     
-    data.forEach(completion => {
-      completed.add(completion.task_id);
+    // Load all task completions for this user (not just last 24 hours)
+    const completedTasksQuery = query(
+      collection(db, 'task_completions'),
+      where('user_id', '==', telegramId)
+    );
+    const completedTasksSnapshot = await getDocs(completedTasksQuery);
+    const allCompletions = completedTasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Array<{ id: string; completed_at: string; task_id: string; task_type: string }>;
+    
+    // Group completions by task_id to get the latest completion for each task
+    const taskCompletions = new Map<string, { completed_at: string; task_type: string }>();
+    
+    allCompletions.forEach(completion => {
+      const existing = taskCompletions.get(completion.task_id);
+      if (!existing || new Date(completion.completed_at) > new Date(existing.completed_at)) {
+        taskCompletions.set(completion.task_id, {
+          completed_at: completion.completed_at,
+          task_type: completion.task_type
+        });
+      }
+    });
+    
+    // Process each task completion based on type
+    taskCompletions.forEach((completion, taskId) => {
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
       
-      const task = tasks.find(t => t.id === completion.task_id);
-      if (task?.cooldown) {
-        const completedAt = new Date(completion.completed_at).getTime();
-        const now = Date.now();
-        const remainingCooldown = Math.max(0, task.cooldown - Math.floor((now - completedAt) / 1000));
-        cooldowns[completion.task_id] = remainingCooldown;
+      const completedAt = new Date(completion.completed_at);
+      const now = new Date();
+      
+      if (task.type === 'checkin') {
+        // Daily check-in: Check if completed within last 24 hours
+        const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        if (completedAt >= twentyFourHoursAgo) {
+          completed.add(taskId);
+          
+          // Calculate remaining cooldown
+          const remainingCooldown = Math.max(0, 86400 - Math.floor((now.getTime() - completedAt.getTime()) / 1000));
+          cooldowns[taskId] = remainingCooldown;
+        }
+      } else if (task.type === 'social') {
+        // Social tasks: One-time completion (lifetime)
+        completed.add(taskId);
+      } else {
+        // Other tasks: Check cooldown if applicable
+        completed.add(taskId);
+        if (task.cooldown) {
+          const remainingCooldown = Math.max(0, task.cooldown - Math.floor((now.getTime() - completedAt.getTime()) / 1000));
+          cooldowns[taskId] = remainingCooldown;
+        }
       }
     });
     
@@ -460,19 +548,67 @@ export default function Tasks() {
 
       // Handle social tasks with URL
       if (task.type === 'social' && task.url) {
+        // Check if social task is already completed (one-time only)
+        if (completedTasks.has(task.id)) {
+          addNotification({
+            type: 'info',
+            title: 'Social Task Already Completed',
+            message: 'This social task has already been completed. Social tasks can only be completed once.'
+          });
+          return;
+        }
+        
         // Open URL in new tab
         window.open(task.url, '_blank');
         
-        // Mark task as completed after opening URL
+        // Show notification asking user to confirm completion
+        addNotification({
+          type: 'info',
+          title: 'Social Task Opened',
+          message: 'Social media page opened. Please complete the action and click the button again to confirm.'
+        });
+        
+        // Mark task as completed after user confirmation
         setTimeout(async () => {
           await completeTask(task);
         }, 1000);
         return;
       }
 
-      // Handle daily check-in
+      // Handle daily check-in with 24-hour restriction
       if (task.type === 'checkin') {
+        // Check if user has already completed daily check-in in the last 24 hours
+        const twentyFourHoursAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
+        const dailyCheckInQuery = query(
+          collection(db, 'task_completions'),
+          where('user_id', '==', telegramId),
+          where('task_type', '==', 'checkin'),
+          where('completed_at', '>=', twentyFourHoursAgo.toISOString())
+        );
+        const dailyCheckInSnapshot = await getDocs(dailyCheckInQuery);
+        
+        if (!dailyCheckInSnapshot.empty) {
+          addNotification({
+            type: 'warning',
+            title: 'Daily Check-in Already Completed',
+            message: 'You have already completed daily check-in in the last 24 hours. Please wait until tomorrow.'
+          });
+          return;
+        }
+        
+        // Complete the daily check-in task
         await completeTask(task);
+        
+        // Update daily check-in status
+        setDailyCheckIn(true);
+        
+        // Show special success message for daily check-in
+        addNotification({
+          type: 'success',
+          title: 'Daily Check-in Completed! 🎉',
+          message: `Daily check-in completed! Earned ৳${task.reward}. Come back tomorrow for your next check-in!`
+        });
+        
         return;
       }
 
@@ -506,19 +642,9 @@ export default function Tasks() {
         throw new Error('Failed to create task completion record');
       }
 
-      // Update user balance in database
+      // Update user balance using store function (handles both database and local state)
       try {
-        const userQuery = query(collection(db, 'users'), where('telegram_id', '==', telegramId));
-        const userSnapshot = await getDocs(userQuery);
-        if (!userSnapshot.empty) {
-          const userDoc = userSnapshot.docs[0];
-          await updateDoc(doc(db, 'users', userDoc.id), { 
-            balance: balance + task.reward,
-            updated_at: serverTimestamp()
-          });
-          // Update store balance
-          await updateBalance(task.reward);
-        }
+        await updateBalance(task.reward);
       } catch (balanceError) {
         console.error('Balance update error:', balanceError);
       }
@@ -534,19 +660,14 @@ export default function Tasks() {
         }));
       }
 
-      // Show success notification
-      addNotification({
-        type: 'success',
-        title: 'Task Completed! 🎉',
-        message: `Task completed! Earned ৳${task.reward}`
-      });
-
-      // Update task completion count
-      setTaskCompletionCounts(prev => {
-        const newCounts = { ...prev };
-        newCounts[task.id] = (prev[task.id] || 0) + 1;
-        return newCounts;
-      });
+      // Show success notification (skip for daily check-in as it has its own special notification)
+      if (task.type !== 'checkin') {
+        addNotification({
+          type: 'success',
+          title: 'Task Completed! 🎉',
+          message: `Task completed! Earned ৳${task.reward}`
+        });
+      }
 
       // Refresh user data after a short delay
       setTimeout(() => {
@@ -555,6 +676,13 @@ export default function Tasks() {
         loadDailyCheckIn();
         // Force refresh user data
         forceUpdate();
+        
+        // Update task completion count after successful completion
+        setTaskCompletionCounts(prev => {
+          const newCounts = { ...prev };
+          newCounts[task.id] = (prev[task.id] || 0) + 1;
+          return newCounts;
+        });
       }, 1000);
 
     } catch (error) {
@@ -588,7 +716,8 @@ export default function Tasks() {
 
   const calculateProgress = () => {
     const completed = Array.from(completedTasks).filter(Boolean).length;
-    return (completed / tasks.length) * 100;
+    const totalTasks = filteredTasks.length; // Use filtered tasks instead of all tasks
+    return totalTasks > 0 ? (completed / totalTasks) * 100 : 0;
   };
 
   const filteredTasks = tasks.filter(task => {
@@ -598,7 +727,7 @@ export default function Tasks() {
       case 'social':
         return task.type === 'social';
       case 'special':
-        return task.special || task.type === 'trading_platform' || task.type === 'referral' || task.type === 'bonus';
+        return task.special === true; // Only show tasks explicitly marked as special
       default:
         return true;
     }
@@ -896,8 +1025,17 @@ export default function Tasks() {
   // Check status when UID changes
   useEffect(() => {
     if (specialTaskUID.trim() && currentSpecialTask) {
-      const timer = setTimeout(() => {
-        checkCurrentUIDStatus();
+      const timer = setTimeout(async () => {
+        try {
+          await checkCurrentUIDStatus();
+        } catch (error) {
+          console.error('Error checking UID status:', error);
+          addNotification({
+            type: 'error',
+            title: 'UID Validation Error',
+            message: 'Failed to validate UID. Please try again.'
+          });
+        }
       }, 1000);
       
       return () => clearTimeout(timer);
@@ -907,8 +1045,12 @@ export default function Tasks() {
   // Real-time status checking for submitted UIDs
   useEffect(() => {
     if (specialTaskSubmissionId && specialTaskStatus === 'pending') {
-      const interval = setInterval(() => {
-        checkCurrentUIDStatus();
+      const interval = setInterval(async () => {
+        try {
+          await checkCurrentUIDStatus();
+        } catch (error) {
+          console.error('Error checking UID status in real-time:', error);
+        }
       }, 10000); // Check every 10 seconds
       
       return () => clearInterval(interval);
@@ -1256,7 +1398,7 @@ export default function Tasks() {
             id: '1',
             title: 'Daily Check-in',
             subtitle: 'Complete daily check-in to earn real money',
-            reward: 50,
+            reward: 2,
             type: 'checkin',
             icon: 'checkin',
             buttonText: 'CHECK IN',
@@ -1280,6 +1422,98 @@ export default function Tasks() {
             completionCount: 0,
             maxCompletions: 1,
             url: 'https://t.me/bt_community'
+          },
+          // Social Links - One-time only (lifetime completion)
+          {
+            id: 'facebook_like',
+            title: 'Like Facebook Page',
+            subtitle: 'Like and follow our Facebook page',
+            reward: 10,
+            type: 'social',
+            icon: 'social',
+            buttonText: 'VISIT PAGE',
+            description: 'Like and follow our Facebook page for updates (one-time completion)',
+            isActive: true,
+            completionCount: 0,
+            maxCompletions: 1,
+            url: 'https://facebook.com/cashpoints',
+            special: false
+          },
+          {
+            id: 'twitter_follow',
+            title: 'Follow Twitter',
+            subtitle: 'Follow us on Twitter',
+            reward: 8,
+            type: 'social',
+            icon: 'social',
+            buttonText: 'FOLLOW',
+            description: 'Follow us on Twitter for latest updates (one-time completion)',
+            isActive: true,
+            completionCount: 0,
+            maxCompletions: 1,
+            url: 'https://twitter.com/cashpoints',
+            special: false
+          },
+          {
+            id: 'instagram_follow',
+            title: 'Follow Instagram',
+            subtitle: 'Follow us on Instagram',
+            reward: 8,
+            type: 'social',
+            icon: 'social',
+            buttonText: 'FOLLOW',
+            description: 'Follow us on Instagram for exclusive content (one-time completion)',
+            isActive: true,
+            completionCount: 0,
+            maxCompletions: 1,
+            url: 'https://instagram.com/cashpoints',
+            special: false
+          },
+          {
+            id: 'youtube_subscribe',
+            title: 'Subscribe YouTube',
+            subtitle: 'Subscribe to our YouTube channel',
+            reward: 15,
+            type: 'social',
+            icon: 'social',
+            buttonText: 'SUBSCRIBE',
+            description: 'Subscribe to our YouTube channel for tutorials (one-time completion)',
+            isActive: true,
+            completionCount: 0,
+            maxCompletions: 1,
+            url: 'https://youtube.com/cashpoints',
+            special: false
+          },
+          // Special Tasks - One-time only
+          {
+            id: 'referral_bonus',
+            title: 'Refer 5 Friends',
+            subtitle: 'Invite 5 friends to earn bonus',
+            reward: 50,
+            type: 'special',
+            icon: 'referral',
+            buttonText: 'COMPLETE',
+            description: 'Invite 5 friends to earn a special bonus reward',
+            isActive: true,
+            completionCount: 0,
+            maxCompletions: 1,
+            url: '',
+            special: true
+          },
+          {
+            id: 'first_withdrawal',
+            title: 'First Withdrawal',
+            subtitle: 'Complete your first withdrawal',
+            reward: 25,
+            type: 'special',
+            icon: 'referral',
+            buttonText: 'COMPLETE',
+            description: 'Complete your first withdrawal to earn bonus',
+            isActive: true,
+            completionCount: 0,
+            maxCompletions: 1,
+            url: '',
+            special: true
           }
         ];
         setTasks(defaultTasks);
@@ -1693,7 +1927,7 @@ export default function Tasks() {
                     {completedTasks.has(task.id) ? (
                       <div className="flex items-center space-x-1">
                         <CheckCircle2 className="w-4 h-4" />
-                        <span>Done</span>
+                        <span>{task.type === 'checkin' ? 'Completed Today' : 'Done'}</span>
                       </div>
                     ) : (
                       task.special ? 'Sign Up' : task.buttonText
@@ -1717,10 +1951,10 @@ export default function Tasks() {
                         <span className="text-gray-400">Reward</span>
                         <span className="text-gold">৳{task.reward}</span>
                       </div>
-                      <div className="flex items-center justify-between">
-                        <span className="text-gray-400">Streak Bonus</span>
-                        <span className="text-green-500">+{(taskStreak * 10)}%</span>
-                      </div>
+                                             <div className="flex items-center justify-between">
+                         <span className="text-gray-400">Streak Bonus</span>
+                         <span className="text-green-500">+{Math.min(taskStreak * 10, 50)}%</span>
+                       </div>
                       <div className="flex items-center justify-between">
                         <span className="text-gray-400">Total Earnings</span>
                         <div className="flex items-center space-x-1">
@@ -1730,10 +1964,16 @@ export default function Tasks() {
                           </span>
                         </div>
                       </div>
-                      {task.cooldown && (
+                      {task.cooldown && task.type === 'checkin' && (
                         <div className="flex items-center justify-between">
                           <span className="text-gray-400">Cooldown</span>
                           <span className="text-blue-500">{formatTime(task.cooldown)}</span>
+                        </div>
+                      )}
+                      {task.type === 'social' && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-400">Completion Type</span>
+                          <span className="text-blue-500">One-time only</span>
                         </div>
                       )}
                       {task.url && (
