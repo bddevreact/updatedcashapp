@@ -34,126 +34,338 @@ export default function LiveActivityFeed({ maxItems = 15, autoScroll = true }: L
   // Load real activities from database
   const loadRealActivities = async () => {
     try {
+      console.log('🔄 LiveActivityFeed: Starting to load activities...');
       setIsLoading(true);
       const newActivities: LiveActivity[] = [];
 
       // 1. Load recent task completions
-      const taskCompletionsRef = collection(db, 'task_completions');
-      const taskQuery = query(taskCompletionsRef, orderBy('created_at', 'desc'), limit(10));
-      const taskSnapshot = await getDocs(taskQuery);
+      try {
+        console.log('🔄 LiveActivityFeed: Loading task completions...');
+        const taskCompletionsRef = collection(db, 'task_completions');
+        
+        // Try with index first
+        try {
+          const taskQuery = query(taskCompletionsRef, orderBy('completed_at', 'desc'), limit(10));
+          const taskSnapshot = await getDocs(taskQuery);
 
-      if (!taskSnapshot.empty) {
-        taskSnapshot.forEach(task => {
-          const taskData = task.data();
-          newActivities.push({
-            id: `task_${task.id}`,
-            type: 'task',
-            title: 'Task Completed',
-            description: `${taskData.users?.first_name || 'User'} completed ${taskData.task_templates?.title || 'task'}`,
-            amount: taskData.task_templates?.reward || 0,
-            timestamp: new Date(taskData.created_at),
-            user: taskData.users?.first_name || taskData.users?.username || 'Unknown',
-            isLive: true,
-            status: 'completed'
-          });
-        });
+          console.log('📊 LiveActivityFeed: Found', taskSnapshot.size, 'task completions');
+
+          if (!taskSnapshot.empty) {
+            taskSnapshot.forEach(task => {
+              const taskData = task.data();
+              console.log('📝 LiveActivityFeed: Task data:', taskData);
+              
+              const activity = {
+                id: `task_${task.id}`,
+                type: 'task' as const,
+                title: 'Task Completed',
+                description: `${taskData.user_id || 'User'} completed ${taskData.task_title || 'task'}`,
+                amount: taskData.reward_amount || 0,
+                timestamp: taskData.completed_at?.toDate?.() || new Date(taskData.created_at),
+                user: taskData.user_id || 'Unknown',
+                isLive: true,
+                status: 'completed'
+              };
+              
+              newActivities.push(activity);
+              console.log('✅ LiveActivityFeed: Added task activity:', activity);
+            });
+          }
+        } catch (indexError: any) {
+          // If index error, try without orderBy
+          if (indexError.code === 'failed-precondition') {
+            console.log('⚠️ LiveActivityFeed: Index not ready for task completions, trying without orderBy...');
+            const taskQuery2 = query(taskCompletionsRef, limit(10));
+            const taskSnapshot2 = await getDocs(taskQuery2);
+
+            console.log('📊 LiveActivityFeed: Found', taskSnapshot2.size, 'task completions (without orderBy)');
+
+            if (!taskSnapshot2.empty) {
+              taskSnapshot2.forEach(task => {
+                const taskData = task.data();
+                console.log('📝 LiveActivityFeed: Task data:', taskData);
+                
+                const activity = {
+                  id: `task_${task.id}`,
+                  type: 'task' as const,
+                  title: 'Task Completed',
+                  description: `${taskData.user_id || 'User'} completed ${taskData.task_title || 'task'}`,
+                  amount: taskData.reward_amount || 0,
+                  timestamp: taskData.completed_at?.toDate?.() || new Date(taskData.created_at),
+                  user: taskData.user_id || 'Unknown',
+                  isLive: true,
+                  status: 'completed'
+                };
+                
+                newActivities.push(activity);
+                console.log('✅ LiveActivityFeed: Added task activity:', activity);
+              });
+            }
+          } else {
+            throw indexError;
+          }
+        }
+      } catch (error) {
+        console.log('❌ LiveActivityFeed: Error loading task completions:', error);
       }
 
       // 2. Load recent withdrawals
-      const withdrawalsRef = collection(db, 'withdrawal_requests');
-      const withdrawalQuery = query(withdrawalsRef, orderBy('created_at', 'desc'), limit(10));
-      const withdrawalSnapshot = await getDocs(withdrawalQuery);
+      try {
+        console.log('🔄 LiveActivityFeed: Loading withdrawals...');
+        const withdrawalsRef = collection(db, 'withdrawal_requests');
+        
+        // Try with index first
+        try {
+          const withdrawalQuery = query(withdrawalsRef, orderBy('created_at', 'desc'), limit(10));
+          const withdrawalSnapshot = await getDocs(withdrawalQuery);
 
-      if (!withdrawalSnapshot.empty) {
-        withdrawalSnapshot.forEach(withdrawal => {
-          const withdrawalData = withdrawal.data();
-          newActivities.push({
-            id: `withdrawal_${withdrawal.id}`,
-            type: 'withdrawal',
-            title: 'Withdrawal Request',
-            description: `${withdrawalData.users?.first_name || 'User'} requested withdrawal via ${withdrawalData.method}`,
-            amount: withdrawalData.amount,
-            timestamp: new Date(withdrawalData.created_at),
-            user: withdrawalData.users?.first_name || withdrawalData.users?.username || 'Unknown',
-            isLive: withdrawalData.status === 'pending',
-            status: withdrawalData.status
-          });
-        });
+          if (!withdrawalSnapshot.empty) {
+            withdrawalSnapshot.forEach(withdrawal => {
+              const withdrawalData = withdrawal.data();
+              newActivities.push({
+                id: `withdrawal_${withdrawal.id}`,
+                type: 'withdrawal',
+                title: 'Withdrawal Request',
+                description: `${withdrawalData.user_id || 'User'} requested withdrawal via ${withdrawalData.method}`,
+                amount: withdrawalData.amount,
+                timestamp: withdrawalData.created_at?.toDate?.() || new Date(),
+                user: withdrawalData.user_id || 'Unknown',
+                isLive: withdrawalData.status === 'pending',
+                status: withdrawalData.status
+              });
+            });
+          }
+        } catch (indexError: any) {
+          // If index error, try without orderBy
+          if (indexError.code === 'failed-precondition') {
+            console.log('⚠️ LiveActivityFeed: Index not ready for withdrawals, trying without orderBy...');
+            const withdrawalQuery2 = query(withdrawalsRef, limit(10));
+            const withdrawalSnapshot2 = await getDocs(withdrawalQuery2);
+
+            if (!withdrawalSnapshot2.empty) {
+              withdrawalSnapshot2.forEach(withdrawal => {
+                const withdrawalData = withdrawal.data();
+                newActivities.push({
+                  id: `withdrawal_${withdrawal.id}`,
+                  type: 'withdrawal',
+                  title: 'Withdrawal Request',
+                  description: `${withdrawalData.user_id || 'User'} requested withdrawal via ${withdrawalData.method}`,
+                  amount: withdrawalData.amount,
+                  timestamp: withdrawalData.created_at?.toDate?.() || new Date(),
+                  user: withdrawalData.user_id || 'Unknown',
+                  isLive: withdrawalData.status === 'pending',
+                  status: withdrawalData.status
+                });
+              });
+            }
+          } else {
+            throw indexError;
+          }
+        }
+      } catch (error) {
+        console.log('❌ LiveActivityFeed: Error loading withdrawals:', error);
       }
 
       // 3. Load recent deposits (from user_activities)
-      const depositsRef = collection(db, 'user_activities');
-      const depositQuery = query(depositsRef, where('activity_type', '==', 'deposit_request'), orderBy('created_at', 'desc'), limit(10));
-      const depositSnapshot = await getDocs(depositQuery);
+      try {
+        console.log('🔄 LiveActivityFeed: Loading deposits...');
+        const depositsRef = collection(db, 'user_activities');
+        
+        // Try with index first
+        try {
+          const depositQuery = query(depositsRef, where('activity_type', '==', 'deposit_request'), orderBy('created_at', 'desc'), limit(10));
+          const depositSnapshot = await getDocs(depositQuery);
 
-      if (!depositSnapshot.empty) {
-        depositSnapshot.forEach(deposit => {
-          const depositData = deposit.data();
-          try {
-            const parsedData = JSON.parse(depositData.activity_data || '{}');
-            newActivities.push({
-              id: `deposit_${deposit.id}`,
-              type: 'deposit',
-              title: 'Deposit Request',
-              description: `Deposit request via ${parsedData.method || 'unknown method'}`,
-              amount: parsedData.amount || 0,
-              timestamp: new Date(depositData.created_at),
-              user: 'User', // We'll need to get user info separately
-              isLive: true,
-              status: 'pending'
+          if (!depositSnapshot.empty) {
+            depositSnapshot.forEach(deposit => {
+              const depositData = deposit.data();
+              try {
+                const parsedData = JSON.parse(depositData.activity_data || '{}');
+                newActivities.push({
+                  id: `deposit_${deposit.id}`,
+                  type: 'deposit',
+                  title: 'Deposit Request',
+                  description: `Deposit request via ${parsedData.method || 'unknown method'}`,
+                  amount: parsedData.amount || 0,
+                  timestamp: depositData.created_at?.toDate?.() || new Date(),
+                  user: depositData.user_id || 'User',
+                  isLive: true,
+                  status: 'pending'
+                });
+              } catch (e) {
+                console.log('Error parsing deposit data:', e);
+              }
             });
-          } catch (e) {
-            console.log('Error parsing deposit data:', e);
           }
-        });
+        } catch (indexError: any) {
+          // If index error, try without orderBy
+          if (indexError.code === 'failed-precondition') {
+            console.log('⚠️ LiveActivityFeed: Index not ready for deposits, trying without orderBy...');
+            const depositQuery2 = query(depositsRef, where('activity_type', '==', 'deposit_request'), limit(10));
+            const depositSnapshot2 = await getDocs(depositQuery2);
+
+            if (!depositSnapshot2.empty) {
+              depositSnapshot2.forEach(deposit => {
+                const depositData = deposit.data();
+                try {
+                  const parsedData = JSON.parse(depositData.activity_data || '{}');
+                  newActivities.push({
+                    id: `deposit_${deposit.id}`,
+                    type: 'deposit',
+                    title: 'Deposit Request',
+                    description: `Deposit request via ${parsedData.method || 'unknown method'}`,
+                    amount: parsedData.amount || 0,
+                    timestamp: depositData.created_at?.toDate?.() || new Date(),
+                    user: depositData.user_id || 'User',
+                    isLive: true,
+                    status: 'pending'
+                  });
+                } catch (e) {
+                  console.log('Error parsing deposit data:', e);
+                }
+              });
+            }
+          } else {
+            throw indexError;
+          }
+        }
+      } catch (error) {
+        console.log('❌ LiveActivityFeed: Error loading deposits:', error);
       }
 
       // 4. Load special task submissions
-      const specialTasksRef = collection(db, 'special_task_submissions');
-      const specialQuery = query(specialTasksRef, orderBy('created_at', 'desc'), limit(10));
-      const specialSnapshot = await getDocs(specialQuery);
+      try {
+        console.log('🔄 LiveActivityFeed: Loading special task submissions...');
+        const specialTasksRef = collection(db, 'special_task_submissions');
+        
+        // Try with index first
+        try {
+          const specialQuery = query(specialTasksRef, orderBy('created_at', 'desc'), limit(10));
+          const specialSnapshot = await getDocs(specialQuery);
 
-      if (!specialSnapshot.empty) {
-        specialSnapshot.forEach(task => {
-          const taskData = task.data();
-          newActivities.push({
-            id: `special_${task.id}`,
-            type: 'special_task',
-            title: 'Special Task Submitted',
-            description: `${taskData.users?.first_name || 'User'} submitted UID for ${taskData.task_templates?.title || 'special task'}`,
-            amount: taskData.task_templates?.reward_amount || 0,
-            timestamp: new Date(taskData.created_at),
-            user: taskData.users?.first_name || taskData.users?.username || 'Unknown',
-            isLive: taskData.status === 'pending',
-            status: taskData.status
-          });
-        });
+          if (!specialSnapshot.empty) {
+            specialSnapshot.forEach(task => {
+              const taskData = task.data();
+              newActivities.push({
+                id: `special_${task.id}`,
+                type: 'special_task',
+                title: 'Special Task Submitted',
+                description: `${taskData.user_id || 'User'} submitted UID for special task`,
+                amount: taskData.reward_amount || 0,
+                timestamp: taskData.created_at?.toDate?.() || new Date(),
+                user: taskData.user_id || 'Unknown',
+                isLive: taskData.status === 'pending',
+                status: taskData.status
+              });
+            });
+          }
+        } catch (indexError: any) {
+          // If index error, try without orderBy
+          if (indexError.code === 'failed-precondition') {
+            console.log('⚠️ LiveActivityFeed: Index not ready for special tasks, trying without orderBy...');
+            const specialQuery2 = query(specialTasksRef, limit(10));
+            const specialSnapshot2 = await getDocs(specialQuery2);
+
+            if (!specialSnapshot2.empty) {
+              specialSnapshot2.forEach(task => {
+                const taskData = task.data();
+                newActivities.push({
+                  id: `special_${task.id}`,
+                  type: 'special_task',
+                  title: 'Special Task Submitted',
+                  description: `${taskData.user_id || 'User'} submitted UID for special task`,
+                  amount: taskData.reward_amount || 0,
+                  timestamp: taskData.created_at?.toDate?.() || new Date(),
+                  user: taskData.user_id || 'Unknown',
+                  isLive: taskData.status === 'pending',
+                  status: taskData.status
+                });
+              });
+            }
+          } else {
+            throw indexError;
+          }
+        }
+      } catch (error) {
+        console.log('❌ LiveActivityFeed: Error loading special tasks:', error);
       }
 
-      // 5. Load referral activities (from trading_platform_referrals)
-      const referralsRef = collection(db, 'trading_platform_referrals');
-      const referralQuery = query(referralsRef, orderBy('created_at', 'desc'), limit(10));
-      const referralSnapshot = await getDocs(referralQuery);
+      // 5. Load referral activities (from referrals collection)
+      try {
+        console.log('🔄 LiveActivityFeed: Loading referrals...');
+        const referralsRef = collection(db, 'referrals');
+        
+        // Try with index first
+        try {
+          const referralQuery = query(referralsRef, orderBy('created_at', 'desc'), limit(10));
+          const referralSnapshot = await getDocs(referralQuery);
 
-      if (!referralSnapshot.empty) {
-        referralSnapshot.forEach(referral => {
-          const referralData = referral.data();
-          newActivities.push({
-            id: `referral_${referral.id}`,
-            type: 'referral',
-            title: 'Trading Referral',
-            description: `${referralData.users?.first_name || 'User'} completed ${referralData.platform_name} referral`,
-            amount: referralData.reward_amount || 0,
-            timestamp: new Date(referralData.created_at),
-            user: referralData.users?.first_name || referralData.users?.username || 'Unknown',
-            isLive: referralData.status === 'pending',
-            status: referralData.status
-          });
-        });
+          console.log('📊 LiveActivityFeed: Found', referralSnapshot.size, 'referrals');
+
+          if (!referralSnapshot.empty) {
+            referralSnapshot.forEach(referral => {
+              const referralData = referral.data();
+              console.log('📝 LiveActivityFeed: Referral data:', referralData);
+              
+              const activity = {
+                id: `referral_${referral.id}`,
+                type: 'referral' as const,
+                title: 'Referral Completed',
+                description: `${referralData.referrer_id || 'User'} referred ${referralData.referred_id || 'someone'}`,
+                amount: 0, // Referral rewards are handled separately
+                timestamp: referralData.created_at?.toDate?.() || new Date(),
+                user: referralData.referrer_id || 'Unknown',
+                isLive: true,
+                status: 'completed'
+              };
+              
+              newActivities.push(activity);
+              console.log('✅ LiveActivityFeed: Added referral activity:', activity);
+            });
+          }
+        } catch (indexError: any) {
+          // If index error, try without orderBy
+          if (indexError.code === 'failed-precondition') {
+            console.log('⚠️ LiveActivityFeed: Index not ready for referrals, trying without orderBy...');
+            const referralQuery2 = query(referralsRef, limit(10));
+            const referralSnapshot2 = await getDocs(referralQuery2);
+
+            console.log('📊 LiveActivityFeed: Found', referralSnapshot2.size, 'referrals (without orderBy)');
+
+            if (!referralSnapshot2.empty) {
+              referralSnapshot2.forEach(referral => {
+                const referralData = referral.data();
+                console.log('📝 LiveActivityFeed: Referral data:', referralData);
+                
+                const activity = {
+                  id: `referral_${referral.id}`,
+                  type: 'referral' as const,
+                  title: 'Referral Completed',
+                  description: `${referralData.referrer_id || 'User'} referred ${referralData.referred_id || 'someone'}`,
+                  amount: 0, // Referral rewards are handled separately
+                  timestamp: referralData.created_at?.toDate?.() || new Date(),
+                  user: referralData.referrer_id || 'Unknown',
+                  isLive: true,
+                  status: 'completed'
+                };
+                
+                newActivities.push(activity);
+                console.log('✅ LiveActivityFeed: Added referral activity:', activity);
+              });
+            }
+          } else {
+            throw indexError;
+          }
+        }
+      } catch (error) {
+        console.log('❌ LiveActivityFeed: Error loading referrals:', error);
       }
 
       // Sort all activities by timestamp (newest first)
       newActivities.sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+
+      console.log('📊 LiveActivityFeed: Total activities found:', newActivities.length);
+      console.log('📊 LiveActivityFeed: Activities:', newActivities);
 
       // Take only the latest activities
       setActivities(newActivities.slice(0, maxItems));
@@ -181,6 +393,7 @@ export default function LiveActivityFeed({ maxItems = 15, autoScroll = true }: L
 
   // Load activities on mount
   useEffect(() => {
+    console.log('🔄 LiveActivityFeed: Loading activities...');
     loadRealActivities();
   }, []);
 
