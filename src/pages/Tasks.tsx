@@ -79,8 +79,22 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onComplete, completed, cooldo
 
   const getButtonText = () => {
     if (isCompleting) return 'Processing...';
-    if (completed) return '✓ Completed';
-    if (cooldown > 0) return `⏰ ${Math.floor(cooldown / 60)}m ${cooldown % 60}s`;
+    if (completed) {
+      if (task.type === 'checkin' && cooldown > 0) {
+        const hours = Math.floor(cooldown / 3600);
+        const minutes = Math.floor((cooldown % 3600) / 60);
+        return `⏰ ${hours}h ${minutes}m`;
+      }
+      return '✓ Completed';
+    }
+    if (cooldown > 0) {
+      if (task.type === 'checkin') {
+        const hours = Math.floor(cooldown / 3600);
+        const minutes = Math.floor((cooldown % 3600) / 60);
+        return `⏰ ${hours}h ${minutes}m`;
+      }
+      return `⏰ ${Math.floor(cooldown / 60)}m ${cooldown % 60}s`;
+    }
     if (isSpecial) return 'Sign Up';
     return task.buttonText;
   };
@@ -199,6 +213,10 @@ export default function Tasks() {
   useEffect(() => {
     const loadInitialData = async () => {
       try {
+        console.log('🔍 Debug: telegramId =', telegramId);
+        console.log('🔍 Debug: telegramId type =', typeof telegramId);
+        console.log('🔍 Debug: telegramId length =', telegramId?.length);
+        
         await loadTasksFromDatabase();
         setTasksLoaded(true);
       } catch (error: any) {
@@ -532,6 +550,13 @@ export default function Tasks() {
     }
 
     try {
+      // Special handling for daily check-in
+      if (task.type === 'checkin') {
+        console.log('🎯 Processing daily check-in task...');
+        await completeTask(task);
+        return;
+      }
+
       if (task.special) {
         if (task.url) {
           window.open(task.url, '_blank');
@@ -569,12 +594,35 @@ export default function Tasks() {
 
   const completeTask = async (task: Task) => {
     try {
+      console.log('🎯 Starting task completion for user:', telegramId);
+      
       await runTransaction(db, async (transaction) => {
         // Query user by telegram_id
         const userQuery = query(collection(db, 'users'), where('telegram_id', '==', telegramId), limit(1));
         const userSnap = await getDocs(userQuery);
-        if (userSnap.empty) throw new Error('User not found');
-        const userDocRef = userSnap.docs[0].ref;
+        
+        let userDocRef;
+        let userData;
+        
+        if (userSnap.empty) {
+          console.log('👤 User not found, creating new user...');
+          // Create new user if not exists
+          const newUserRef = doc(collection(db, 'users'));
+          userDocRef = newUserRef;
+          userData = {
+            telegram_id: telegramId,
+            balance: 0,
+            total_earnings: 0,
+            created_at: serverTimestamp(),
+            updated_at: serverTimestamp()
+          };
+          transaction.set(newUserRef, userData);
+          console.log('✅ New user created with ID:', newUserRef.id);
+        } else {
+          userDocRef = userSnap.docs[0].ref;
+          userData = userSnap.docs[0].data();
+          console.log('✅ Existing user found:', userData);
+        }
 
         const lastCompletionQuery = query(
           collection(db, 'task_completions'),
@@ -592,8 +640,8 @@ export default function Tasks() {
           }
         }
 
-        const userData = userSnap.docs[0].data();
         const newBalance = (userData.balance || 0) + task.reward;
+        console.log('💰 Updating balance:', userData.balance, '+', task.reward, '=', newBalance);
         
         transaction.update(userDocRef, {
           balance: newBalance,
@@ -613,12 +661,15 @@ export default function Tasks() {
         created_at: serverTimestamp()
       });
 
+      console.log('✅ Task completion recorded in database');
+
       await updateBalance(task.reward);
       setCompletedTasks(prev => new Set([...prev, task.id]));
       if (task.cooldown) {
         setTaskCooldowns(prev => ({ ...prev, [task.id]: task.cooldown! }));
       }
       setTaskCompletionCounts(prev => ({ ...prev, [task.id]: (prev[task.id] || 0) + 1 }));
+      
       throttledAddNotification({
         type: 'success',
         title: 'Task Completed!',
@@ -632,13 +683,25 @@ export default function Tasks() {
         loadDailyCheckIn();
       }, 1000);
     } catch (error: any) {
-      console.error('Error completing task:', error.code, error.message);
-      throttledAddNotification({
-        type: 'error',
-        title: 'Task Completion Failed',
-        message: error.message || 'Failed to complete task.',
-        user_id: telegramId || ''
-      });
+      console.error('❌ Error completing task:', error.code, error.message);
+      
+      // Handle index errors specifically
+      if (error.code === 'failed-precondition') {
+        console.log('⚠️ Firebase index not ready yet. This is normal for new deployments.');
+        throttledAddNotification({
+          type: 'info',
+          title: 'Setting Up Database',
+          message: 'Database indexes are being created. Please wait a few minutes and try again.',
+          user_id: telegramId || ''
+        });
+      } else {
+        throttledAddNotification({
+          type: 'error',
+          title: 'Task Completion Failed',
+          message: error.message || 'Failed to complete task.',
+          user_id: telegramId || ''
+        });
+      }
       throw error;
     }
   };
@@ -734,7 +797,7 @@ export default function Tasks() {
     try {
       const q = query(collection(db, 'task_templates'), where('is_active', '==', true), limit(50));
       const snapshot = await getDocs(q);
-      const loadedTasks = snapshot.docs.map(doc => ({
+      let loadedTasks = snapshot.docs.map(doc => ({
         id: doc.id,
         title: doc.data().title,
         subtitle: doc.data().subtitle || '',
@@ -751,20 +814,87 @@ export default function Tasks() {
         special: doc.data().type === 'trading_platform' || doc.data().type === 'referral' || doc.data().type === 'bonus'
       }));
       
+      // If no tasks found in database, add default daily check-in task
+      if (loadedTasks.length === 0) {
+        console.log('📝 No tasks found in database, adding default daily check-in task');
+        loadedTasks = [
+          {
+            id: 'daily-checkin-1',
+            title: 'Daily Check-in',
+            subtitle: 'Complete daily check-in to earn rewards',
+            reward: 2,
+            type: 'checkin',
+            icon: 'checkin',
+            buttonText: 'CHECK IN',
+            cooldown: 86400, // 24 hours in seconds
+            description: 'Check in daily to maintain your streak and earn rewards!',
+            isActive: true,
+            completionCount: 0,
+            maxCompletions: 1,
+            url: '',
+            special: false
+          },
+          {
+            id: 'social-telegram-1',
+            title: 'Join Telegram Channel',
+            subtitle: 'Join our official channel',
+            reward: 5,
+            type: 'social',
+            icon: 'social',
+            buttonText: 'JOIN CHANNEL',
+            cooldown: 0, // One-time task
+            description: 'Join our official Telegram channel for updates and rewards',
+            isActive: true,
+            completionCount: 0,
+            maxCompletions: 1,
+            url: 'https://t.me/your_channel',
+            special: false
+          }
+        ];
+      }
+      
       setTasks(loadedTasks);
       setTasksLoaded(true);
-      throttledAddNotification({
-        type: 'success',
-        title: 'Tasks Loaded',
-        message: `Loaded ${loadedTasks.length} tasks.`,
-        user_id: telegramId || ''
-      });
+      console.log('✅ Loaded tasks:', loadedTasks.length);
+      
+      if (loadedTasks.length > 0) {
+        throttledAddNotification({
+          type: 'success',
+          title: 'Tasks Loaded',
+          message: `Loaded ${loadedTasks.length} tasks.`,
+          user_id: telegramId || ''
+        });
+      }
     } catch (error: any) {
       console.error('Error loading tasks:', error.code, error.message);
+      
+      // Fallback to default tasks if database error
+      const fallbackTasks = [
+        {
+          id: 'daily-checkin-1',
+          title: 'Daily Check-in',
+          subtitle: 'Complete daily check-in to earn rewards',
+          reward: 2,
+          type: 'checkin',
+          icon: 'checkin',
+          buttonText: 'CHECK IN',
+          cooldown: 86400,
+          description: 'Check in daily to maintain your streak and earn rewards!',
+          isActive: true,
+          completionCount: 0,
+          maxCompletions: 1,
+          url: '',
+          special: false
+        }
+      ];
+      
+      setTasks(fallbackTasks);
+      setTasksLoaded(true);
+      
       throttledAddNotification({
         type: 'error',
         title: 'Task Loading Failed',
-        message: 'Failed to load tasks.',
+        message: 'Using default tasks due to database error.',
         user_id: telegramId || ''
       });
     }
@@ -912,6 +1042,21 @@ export default function Tasks() {
                 {tab.label}
               </button>
             ))}
+            
+            {/* Debug button */}
+            <button
+              onClick={() => {
+                console.log('🔍 Debug Info:');
+                console.log('Tasks:', tasks);
+                console.log('Completed:', Array.from(completedTasks));
+                console.log('Cooldowns:', taskCooldowns);
+                console.log('Daily task:', tasks.find(t => t.type === 'checkin'));
+              }}
+              className="px-4 py-2 rounded-full bg-red-500 text-white text-xs"
+              title="Debug Info"
+            >
+              Debug
+            </button>
           </div>
 
           <AnimatePresence>
