@@ -86,11 +86,11 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onComplete, completed, cooldo
       if (task.type === 'checkin' && cooldown > 0) {
         const hours = Math.floor(cooldown / 3600);
         const minutes = Math.floor((cooldown % 3600) / 60);
-        const seconds = cooldown % 60;
+        const seconds = Math.floor(cooldown % 60);
         if (hours > 0) {
-          return `⏰ ${hours}h ${minutes}m`;
+          return `⏰ ${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`;
         } else if (minutes > 0) {
-          return `⏰ ${minutes}m ${seconds}s`;
+          return `⏰ ${minutes}m ${seconds.toString().padStart(2, '0')}s`;
         } else {
           return `⏰ ${seconds}s`;
         }
@@ -101,16 +101,16 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onComplete, completed, cooldo
       if (task.type === 'checkin') {
         const hours = Math.floor(cooldown / 3600);
         const minutes = Math.floor((cooldown % 3600) / 60);
-        const seconds = cooldown % 60;
+        const seconds = Math.floor(cooldown % 60);
         if (hours > 0) {
-          return `⏰ ${hours}h ${minutes}m`;
+          return `⏰ ${hours}h ${minutes.toString().padStart(2, '0')}m ${seconds.toString().padStart(2, '0')}s`;
         } else if (minutes > 0) {
-          return `⏰ ${minutes}m ${seconds}s`;
+          return `⏰ ${minutes}m ${seconds.toString().padStart(2, '0')}s`;
         } else {
           return `⏰ ${seconds}s`;
         }
       }
-      return `⏰ ${Math.floor(cooldown / 60)}m ${cooldown % 60}s`;
+      return `⏰ ${Math.floor(cooldown / 60)}m ${Math.floor(cooldown % 60)}s`;
     }
     if (isSpecial) return 'Sign Up';
     return task.buttonText;
@@ -256,13 +256,24 @@ export default function Tasks() {
   // Load other data after tasks are loaded
   useEffect(() => {
     if (tasksLoaded && telegramId) {
+      console.log('🔄 Loading user data for telegramId:', telegramId);
       loadCompletedTasks();
       loadTaskStreak();
       loadDailyCheckIn();
       loadTodayReferrals();
-      startCooldownTimer();
+    } else {
+      console.log('⏳ Waiting for tasksLoaded:', tasksLoaded, 'telegramId:', telegramId);
     }
   }, [tasksLoaded, telegramId, tasks]);
+
+  // Start cooldown timer separately
+  useEffect(() => {
+    if (telegramId && tasksLoaded) {
+      console.log('🕐 Starting cooldown timer...');
+      const cleanup = startCooldownTimer();
+      return cleanup;
+    }
+  }, [telegramId, tasksLoaded]);
 
   // Real-time task sync with onSnapshot
   useEffect(() => {
@@ -471,24 +482,39 @@ export default function Tasks() {
       setTaskCooldowns(prev => {
         const newCooldowns = { ...prev };
         let hasChanges = false;
+        
+        console.log('🕐 Timer tick - Current cooldowns:', newCooldowns);
+        
         Object.keys(newCooldowns).forEach(taskId => {
           if (newCooldowns[taskId] > 0) {
             newCooldowns[taskId]--;
             hasChanges = true;
-            console.log(`⏰ Task ${taskId} cooldown: ${newCooldowns[taskId]}s`);
+            
+            // Calculate time display
+            const hours = Math.floor(newCooldowns[taskId] / 3600);
+            const minutes = Math.floor((newCooldowns[taskId] % 3600) / 60);
+            const seconds = newCooldowns[taskId] % 60;
+            
+            console.log(`⏰ Task ${taskId} cooldown: ${newCooldowns[taskId]}s (${hours}h ${minutes}m ${seconds}s)`);
           } else {
             delete newCooldowns[taskId]; // Clean up for performance
             hasChanges = true;
             console.log(`✅ Task ${taskId} cooldown expired`);
           }
         });
+        
         if (hasChanges) {
           console.log('🔄 Updated cooldowns:', newCooldowns);
         }
         return newCooldowns;
       });
     }, 1000);
-    return () => clearInterval(interval);
+    
+    console.log('🕐 Cooldown timer started, will update every 1 second');
+    return () => {
+      console.log('🕐 Cleaning up cooldown timer');
+      clearInterval(interval);
+    };
   };
 
   const loadCompletedTasks = async () => {
