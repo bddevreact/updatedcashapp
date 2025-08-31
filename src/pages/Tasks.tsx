@@ -66,7 +66,11 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onComplete, completed, cooldo
 
   const getButtonText = () => {
     if (isCompleting) return 'Processing...';
-    if (completed) return '✓ Completed';
+    if (completed) {
+      if (task.type === 'checkin') return '✓ Completed Today';
+      if (task.type === 'social') return '✓ Completed';
+      return '✓ Completed';
+    }
     if (cooldown > 0) {
       if (task.type === 'checkin') {
         const hours = Math.floor(cooldown / 3600);
@@ -119,6 +123,12 @@ const TaskCard: React.FC<TaskCardProps> = ({ task, onComplete, completed, cooldo
               <p className="text-xs text-green-400 flex items-center gap-1">
                 <CheckCircle className="w-3 h-3" />
                 Completed today - Come back tomorrow!
+              </p>
+            )}
+            {task.type === 'social' && completed && (
+              <p className="text-xs text-blue-400 flex items-center gap-1">
+                <CheckCircle className="w-3 h-3" />
+                Completed - One-time task
               </p>
             )}
             {task.completionCount !== undefined && task.maxCompletions && (
@@ -405,29 +415,57 @@ export default function Tasks() {
   const loadCompletedTasks = async () => {
     if (!telegramId) return;
 
-    const oneDayAgo = new Date(Date.now() - 24 * 60 * 60 * 1000);
-    const completedTasksQuery = query(
-      collection(db, 'task_completions'),
-      where('user_id', '==', telegramId),
-      where('completed_at', '>=', oneDayAgo.toISOString())
-    );
-    const completedTasksSnapshot = await getDocs(completedTasksQuery);
-    const data = completedTasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Array<{ id: string; completed_at: string; task_id: string }>;
-
     const completed: Set<string> = new Set();
     const cooldowns: Record<string, number> = {};
     
-    data.forEach(completion => {
-      completed.add(completion.task_id);
+    // Load all task completions for this user (not just last 24 hours)
+    const completedTasksQuery = query(
+      collection(db, 'task_completions'),
+      where('user_id', '==', telegramId)
+    );
+    const completedTasksSnapshot = await getDocs(completedTasksQuery);
+    const allCompletions = completedTasksSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() })) as Array<{ id: string; completed_at: string; task_id: string; task_type: string }>;
+    
+    // Group completions by task_id to get the latest completion for each task
+    const taskCompletions = new Map<string, { completed_at: string; task_type: string }>();
+    
+    allCompletions.forEach(completion => {
+      const existing = taskCompletions.get(completion.task_id);
+      if (!existing || new Date(completion.completed_at) > new Date(existing.completed_at)) {
+        taskCompletions.set(completion.task_id, {
+          completed_at: completion.completed_at,
+          task_type: completion.task_type
+        });
+      }
+    });
+    
+    // Process each task completion based on type
+    taskCompletions.forEach((completion, taskId) => {
+      const task = tasks.find(t => t.id === taskId);
+      if (!task) return;
       
-      // Only calculate cooldown if tasks are loaded
-      if (tasks.length > 0) {
-        const task = tasks.find(t => t.id === completion.task_id);
-        if (task?.cooldown) {
-          const completedAt = new Date(completion.completed_at).getTime();
-          const now = Date.now();
-          const remainingCooldown = Math.max(0, task.cooldown - Math.floor((now - completedAt) / 1000));
-          cooldowns[completion.task_id] = remainingCooldown;
+      const completedAt = new Date(completion.completed_at);
+      const now = new Date();
+      
+      if (task.type === 'checkin') {
+        // Daily check-in: Check if completed within last 24 hours
+        const twentyFourHoursAgo = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+        if (completedAt >= twentyFourHoursAgo) {
+          completed.add(taskId);
+          
+          // Calculate remaining cooldown
+          const remainingCooldown = Math.max(0, 86400 - Math.floor((now.getTime() - completedAt.getTime()) / 1000));
+          cooldowns[taskId] = remainingCooldown;
+        }
+      } else if (task.type === 'social') {
+        // Social tasks: One-time completion (lifetime)
+        completed.add(taskId);
+      } else {
+        // Other tasks: Check cooldown if applicable
+        completed.add(taskId);
+        if (task.cooldown) {
+          const remainingCooldown = Math.max(0, task.cooldown - Math.floor((now.getTime() - completedAt.getTime()) / 1000));
+          cooldowns[taskId] = remainingCooldown;
         }
       }
     });
@@ -509,6 +547,16 @@ export default function Tasks() {
 
       // Handle social tasks with URL
       if (task.type === 'social' && task.url) {
+        // Check if social task is already completed (one-time only)
+        if (completedTasks.has(task.id)) {
+          addNotification({
+            type: 'info',
+            title: 'Social Task Already Completed',
+            message: 'This social task has already been completed. Social tasks can only be completed once.'
+          });
+          return;
+        }
+        
         // Open URL in new tab
         window.open(task.url, '_blank');
         
@@ -1374,7 +1422,7 @@ export default function Tasks() {
             maxCompletions: 1,
             url: 'https://t.me/bt_community'
           },
-          // Social Links - One-time only
+          // Social Links - One-time only (lifetime completion)
           {
             id: 'facebook_like',
             title: 'Like Facebook Page',
@@ -1383,7 +1431,7 @@ export default function Tasks() {
             type: 'social',
             icon: 'social',
             buttonText: 'VISIT PAGE',
-            description: 'Like and follow our Facebook page for updates',
+            description: 'Like and follow our Facebook page for updates (one-time completion)',
             isActive: true,
             completionCount: 0,
             maxCompletions: 1,
@@ -1398,7 +1446,7 @@ export default function Tasks() {
             type: 'social',
             icon: 'social',
             buttonText: 'FOLLOW',
-            description: 'Follow us on Twitter for latest updates',
+            description: 'Follow us on Twitter for latest updates (one-time completion)',
             isActive: true,
             completionCount: 0,
             maxCompletions: 1,
@@ -1413,7 +1461,7 @@ export default function Tasks() {
             type: 'social',
             icon: 'social',
             buttonText: 'FOLLOW',
-            description: 'Follow us on Instagram for exclusive content',
+            description: 'Follow us on Instagram for exclusive content (one-time completion)',
             isActive: true,
             completionCount: 0,
             maxCompletions: 1,
@@ -1428,7 +1476,7 @@ export default function Tasks() {
             type: 'social',
             icon: 'social',
             buttonText: 'SUBSCRIBE',
-            description: 'Subscribe to our YouTube channel for tutorials',
+            description: 'Subscribe to our YouTube channel for tutorials (one-time completion)',
             isActive: true,
             completionCount: 0,
             maxCompletions: 1,
@@ -1915,10 +1963,16 @@ export default function Tasks() {
                           </span>
                         </div>
                       </div>
-                      {task.cooldown && (
+                      {task.cooldown && task.type === 'checkin' && (
                         <div className="flex items-center justify-between">
                           <span className="text-gray-400">Cooldown</span>
                           <span className="text-blue-500">{formatTime(task.cooldown)}</span>
+                        </div>
+                      )}
+                      {task.type === 'social' && (
+                        <div className="flex items-center justify-between">
+                          <span className="text-gray-400">Completion Type</span>
+                          <span className="text-blue-500">One-time only</span>
                         </div>
                       )}
                       {task.url && (
