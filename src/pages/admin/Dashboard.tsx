@@ -145,8 +145,12 @@ export default function AdminDashboard() {
       const withdrawalsWithUsers = await Promise.all(
         withdrawals.map(async (withdrawal: any) => {
           if (withdrawal.user_id) {
-            const userDoc = await getDoc(doc(db, 'users', withdrawal.user_id));
-            if (userDoc.exists()) {
+            // Query user by telegram_id since user_id is the telegram_id, not document ID
+        const usersRef = collection(db, 'users');
+        const userQuery = query(usersRef, where('telegram_id', '==', withdrawal.user_id), limit(1));
+        const userSnapshot = await getDocs(userQuery);
+        const userDoc = userSnapshot.empty ? null : userSnapshot.docs[0];
+            if (userDoc && userDoc.exists()) {
               const userData = userDoc.data();
               return {
                 ...withdrawal,
@@ -181,8 +185,12 @@ export default function AdminDashboard() {
       const tradingWithUsers = await Promise.all(
         tradingReferrals.map(async (referral: any) => {
           if (referral.user_id) {
-            const userDoc = await getDoc(doc(db, 'users', referral.user_id));
-            if (userDoc.exists()) {
+            // Query user by telegram_id since user_id is the telegram_id, not document ID
+        const usersRef = collection(db, 'users');
+        const userQuery = query(usersRef, where('telegram_id', '==', referral.user_id), limit(1));
+        const userSnapshot = await getDocs(userQuery);
+        const userDoc = userSnapshot.empty ? null : userSnapshot.docs[0];
+            if (userDoc && userDoc.exists()) {
               const userData = userDoc.data();
               return {
                 ...referral,
