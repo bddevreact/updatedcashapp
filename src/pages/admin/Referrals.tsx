@@ -180,8 +180,12 @@ export default function AdminReferrals() {
       const codesWithUsers = await Promise.all(
         codesData.map(async (code: any) => {
           if (code.user_id) {
-            const userDoc = await getDoc(doc(db, 'users', code.user_id));
-            if (userDoc.exists()) {
+                    // Query user by telegram_id since user_id is the telegram_id, not document ID
+        const usersRef = collection(db, 'users');
+        const userQuery = query(usersRef, where('telegram_id', '==', code.user_id), limit(1));
+        const userSnapshot = await getDocs(userQuery);
+        const userDoc = userSnapshot.empty ? null : userSnapshot.docs[0];
+        if (userDoc && userDoc.exists()) {
               const userData = userDoc.data();
               return {
                 ...code,
@@ -326,7 +330,7 @@ export default function AdminReferrals() {
   };
 
   const generateReferralLink = (referralCode: string) => {
-    return `https://t.me/your_bot_username?start=${referralCode}`;
+    return `https://t.me/CashPoinntbot?start=${referralCode}`;
   };
 
   return (
