@@ -39,6 +39,10 @@ export default function Wallet() {
     onUpdate: () => {
       setLastUpdate(new Date());
       updateLiveTransactions();
+    },
+    onWithdrawalUpdate: (withdrawals) => {
+      // Update transactions when withdrawal status changes
+      updateTransactionsWithWithdrawals(withdrawals);
     }
   });
 
@@ -192,86 +196,93 @@ export default function Wallet() {
         created_at: new Date().toISOString()
       };
 
-      // Add optional columns if they have values (empty strings are fine)
-      if (accountName && accountName.trim()) {
+      // Optimize data preparation - only add non-empty values
+      if (accountName?.trim()) {
         withdrawalData.account_name = accountName.trim();
+      } else if (withdrawMethod === 'bank') {
+        throw new Error('Account holder name is required for bank withdrawals');
+      } else if (withdrawMethod === 'crypto') {
+        withdrawalData.account_name = selectedCrypto ? `${selectedCrypto} Wallet` : 'Crypto Wallet';
       } else {
-        // For non-bank methods, use account number or method name as account name
-        if (withdrawMethod === 'bank') {
-          // Bank method requires account name
-          throw new Error('Account holder name is required for bank withdrawals');
-        } else if (withdrawMethod === 'crypto') {
-          // For crypto, use wallet address or crypto symbol
-          withdrawalData.account_name = selectedCrypto ? `${selectedCrypto} Wallet` : 'Crypto Wallet';
-        } else {
-          // For mobile money (bkash, nagad, rocket), use the method name
-          withdrawalData.account_name = withdrawMethod.charAt(0).toUpperCase() + withdrawMethod.slice(1);
-        }
+        withdrawalData.account_name = withdrawMethod.charAt(0).toUpperCase() + withdrawMethod.slice(1);
       }
       
-      if (selectedBank && selectedBank.trim()) withdrawalData.bank_name = selectedBank.trim();
-      if (selectedCrypto && selectedCrypto.trim()) withdrawalData.crypto_symbol = selectedCrypto.trim();
+      if (selectedBank?.trim()) withdrawalData.bank_name = selectedBank.trim();
+      if (selectedCrypto?.trim()) withdrawalData.crypto_symbol = selectedCrypto.trim();
 
-      // Log the withdrawal data for debugging
-      console.log('Creating withdrawal with data:', withdrawalData);
-
-      const withdrawalRef = await addDoc(collection(db, 'withdrawal_requests'), withdrawalData);
-
-      if (!withdrawalRef) throw new Error('Failed to create withdrawal request');
-
-            // Update user balance (deduct withdrawal amount)
-      const userQuery = query(collection(db, 'users'), where('telegram_id', '==', telegramId));
+      // Quick balance check and database operations
+      const usersRef = collection(db, 'users');
+      const userQuery = query(usersRef, where('telegram_id', '==', telegramId), limit(1));
       const userSnapshot = await getDocs(userQuery);
-      if (!userSnapshot.empty) {
-        const userDoc = userSnapshot.docs[0];
-        await updateDoc(doc(db, 'users', userDoc.id), { 
-          balance: balance - parseFloat(amount),
-          updated_at: serverTimestamp()
-        });
+      
+      if (userSnapshot.empty) throw new Error('User not found');
+      
+      const userDoc = userSnapshot.docs[0];
+      const currentBalance = userDoc.data().balance || 0;
+      const withdrawalAmount = parseFloat(amount);
+      
+      if (currentBalance < withdrawalAmount) {
+        throw new Error('Insufficient balance for withdrawal');
       }
 
+      // Show success immediately for better UX
       setWithdrawalStatus('success');
       
-      // Show success notification
+      // Run database operations in parallel
+      Promise.all([
+        addDoc(collection(db, 'withdrawal_requests'), withdrawalData),
+        updateDoc(doc(db, 'users', userDoc.id), {
+          balance: currentBalance - withdrawalAmount,
+          updated_at: serverTimestamp()
+        })
+      ]).then(([withdrawalRef]) => {
+        if (!withdrawalRef) {
+          console.error('Failed to create withdrawal request');
+          setWithdrawalStatus('failed');
+        }
+      }).catch(error => {
+        console.error('Database operation failed:', error);
+        setWithdrawalStatus('failed');
+      });
+      
+      // Show success notification immediately
       addNotification({
         type: 'success',
         title: 'Withdrawal Submitted!',
         message: `Withdrawal request of ৳${amount} submitted successfully!`
       });
 
-      // Send notification to database for admin review
+      // Reset form immediately for better UX
+      setAmount('');
+      setAccountNumber('');
+      setAccountName('');
+      setSelectedBank('');
+      setSelectedCrypto('');
+
+      // Background operations (non-blocking)
+      setTimeout(() => {
+        setWithdrawalStatus('idle');
+      }, 500);
+
+      // Send notification and refresh data in background
       if (telegramId) {
-        await sendUserNotification(
+        sendUserNotification(
           telegramId,
           'info',
           'Withdrawal Request Submitted 📤',
           `Your withdrawal request of ৳${amount} has been submitted and is under review.`
-        );
+        ).catch(err => console.log('Notification send failed:', err));
       }
 
-      // Reset form after success
+      // Refresh data in background
       setTimeout(() => {
-        setAmount('');
-        setAccountNumber('');
-        setAccountName('');
-        setSelectedBank('');
-        setSelectedCrypto('');
-        setWithdrawalStatus('idle');
-      }, 2000);
+        Promise.all([
+          forceUpdate(),
+          loadRecentTransactions()
+        ]).catch(err => console.log('Refresh failed:', err));
+      }, 100);
 
-      // Refresh user balance and transactions
-      forceUpdate();
-      loadRecentTransactions();
-
-      // Send notification about balance update
-      if (telegramId) {
-        await sendUserNotification(
-          telegramId,
-          'success',
-          'Balance Updated 💰',
-          `Your balance has been updated. New balance: ${formatCurrency(balance - parseFloat(amount))}`
-        );
-      }
+      // Balance has already been deducted - no need to wait for admin approval
 
     } catch (error: any) {
       console.error('Error creating withdrawal:', error);
@@ -486,7 +497,7 @@ export default function Wallet() {
     switch (status) {
       case 'completed': 
       case 'approved': return 'Completed';
-      case 'pending': return 'Pending';
+      case 'pending': return 'Pending for admin approval';
       case 'failed': 
       case 'rejected': return 'Rejected';
       case 'processing': return 'Processing';
