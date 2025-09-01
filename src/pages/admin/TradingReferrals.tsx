@@ -126,8 +126,12 @@ export default function AdminTradingReferrals() {
       const referralsWithUsers = await Promise.all(
         referralsData.map(async (referral: any) => {
           try {
-            const userDoc = await getDoc(doc(db, 'users', referral.user_id));
-            if (userDoc.exists()) {
+            // Query user by telegram_id since user_id is the telegram_id, not document ID
+        const usersRef = collection(db, 'users');
+        const userQuery = query(usersRef, where('telegram_id', '==', referral.user_id), limit(1));
+        const userSnapshot = await getDocs(userQuery);
+        const userDoc = userSnapshot.empty ? null : userSnapshot.docs[0];
+            if (userDoc && userDoc.exists()) {
               const userData = userDoc.data();
               return {
                 ...referral,
@@ -225,9 +229,27 @@ export default function AdminTradingReferrals() {
       // If verified, add reward to user balance
       if (newStatus === 'verified') {
         try {
-          await updateDoc(doc(db, 'users', referral.user_id), {
-            balance: (referral.user?.balance || 0) + referral.reward_amount
-          });
+          // Query user by telegram_id since user_id is the telegram_id, not document ID
+          const usersRef = collection(db, 'users');
+          const userQuery = query(usersRef, where('telegram_id', '==', referral.user_id), limit(1));
+          const userSnapshot = await getDocs(userQuery);
+          
+          if (!userSnapshot.empty) {
+            const userDoc = userSnapshot.docs[0];
+            const currentBalance = userDoc.data().balance || 0;
+            const newBalance = currentBalance + referral.reward_amount;
+            
+            await updateDoc(userDoc.ref, {
+              balance: newBalance,
+              total_earnings: (userDoc.data().total_earnings || 0) + referral.reward_amount,
+              updated_at: serverTimestamp()
+            });
+            
+            console.log(`✅ Balance updated for user ${referral.user_id}: ${currentBalance} → ${newBalance}`);
+          } else {
+            console.error('User not found for balance update:', referral.user_id);
+            throw new Error('User not found for balance update');
+          }
         } catch (balanceError) {
           console.error('Error updating user balance:', balanceError);
           throw balanceError;
