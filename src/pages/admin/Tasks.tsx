@@ -141,8 +141,12 @@ export default function AdminTasks() {
       const completionsWithUsers = await Promise.all(
         completionsData.map(async (completion: any) => {
           if (completion.user_id) {
-            const userDoc = await getDoc(doc(db, 'users', completion.user_id));
-            if (userDoc.exists()) {
+            // Query user by telegram_id since user_id is the telegram_id, not document ID
+        const usersRef = collection(db, 'users');
+        const userQuery = query(usersRef, where('telegram_id', '==', completion.user_id), limit(1));
+        const userSnapshot = await getDocs(userQuery);
+        const userDoc = userSnapshot.empty ? null : userSnapshot.docs[0];
+            if (userDoc && userDoc.exists()) {
               const userData = userDoc.data();
               return {
                 ...completion,
@@ -188,8 +192,12 @@ export default function AdminTasks() {
           let taskTemplateData = null;
           
           if (submission.user_id) {
-            const userDoc = await getDoc(doc(db, 'users', submission.user_id));
-            if (userDoc.exists()) {
+            // Query user by telegram_id since user_id is the telegram_id, not document ID
+        const usersRef = collection(db, 'users');
+        const userQuery = query(usersRef, where('telegram_id', '==', submission.user_id), limit(1));
+        const userSnapshot = await getDocs(userQuery);
+        const userDoc = userSnapshot.empty ? null : userSnapshot.docs[0];
+            if (userDoc && userDoc.exists()) {
               userData = userDoc.data();
             }
           }
@@ -425,10 +433,27 @@ export default function AdminTasks() {
       // If verified, add reward to user balance
       if (status === 'verified') {
         try {
-          await updateDoc(doc(db, 'users', submission.user_id), {
-            balance: (submission.user?.balance || 0) + submission.reward_amount,
-            updated_at: serverTimestamp()
-          });
+          // Query user by telegram_id since user_id is the telegram_id, not document ID
+          const usersRef = collection(db, 'users');
+          const userQuery = query(usersRef, where('telegram_id', '==', submission.user_id), limit(1));
+          const userSnapshot = await getDocs(userQuery);
+          
+          if (!userSnapshot.empty) {
+            const userDoc = userSnapshot.docs[0];
+            const currentBalance = userDoc.data().balance || 0;
+            const newBalance = currentBalance + submission.reward_amount;
+            
+            await updateDoc(userDoc.ref, {
+              balance: newBalance,
+              total_earnings: (userDoc.data().total_earnings || 0) + submission.reward_amount,
+              updated_at: serverTimestamp()
+            });
+            
+            console.log(`✅ Balance updated for user ${submission.user_id}: ${currentBalance} → ${newBalance}`);
+          } else {
+            console.error('User not found for balance update:', submission.user_id);
+            alert('User not found for balance update. Please contact support.');
+          }
         } catch (balanceError) {
           console.error('Error updating user balance:', balanceError);
           alert('UID verified but failed to update user balance. Please contact support.');
