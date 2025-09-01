@@ -51,28 +51,49 @@ export default function AdminWithdrawals() {
     try {
       setLoading(true);
       
-      const { data, error } = await supabase
-        .from('withdrawal_requests')
-        .select(`
-          *,
-          user:users!withdrawal_requests_user_id_fkey(first_name, username, balance)
-        `)
-        .order('created_at', { ascending: false });
-
-      if (error) {
-        console.error('Database error:', error);
-        throw error;
-      }
+      // Load withdrawal requests from Firebase
+      const withdrawalsQuery = query(
+        collection(db, 'withdrawal_requests'),
+        orderBy('created_at', 'desc')
+      );
+      const withdrawalsSnapshot = await getDocs(withdrawalsQuery);
+      const withdrawalsData = withdrawalsSnapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       
-      setWithdrawals(data || []);
+      // Load user data for each withdrawal
+      const withdrawalsWithUsers = await Promise.all(
+        withdrawalsData.map(async (withdrawal: any) => {
+          if (withdrawal.user_id) {
+            // Query user by telegram_id since user_id is the telegram_id, not document ID
+            const usersRef = collection(db, 'users');
+            const userQuery = query(usersRef, where('telegram_id', '==', withdrawal.user_id), limit(1));
+            const userSnapshot = await getDocs(userQuery);
+            const userDoc = userSnapshot.empty ? null : userSnapshot.docs[0];
+            
+            if (userDoc && userDoc.exists()) {
+              const userData = userDoc.data();
+              return {
+                ...withdrawal,
+                user: {
+                  first_name: userData.first_name || 'Unknown',
+                  username: userData.username || 'unknown',
+                  balance: userData.balance || 0
+                }
+              };
+            }
+          }
+          return withdrawal;
+        })
+      );
+      
+      setWithdrawals(withdrawalsWithUsers);
       
       // Calculate stats
-      const total = data?.length || 0;
-      const pending = data?.filter(w => w.status === 'pending').length || 0;
-      const approved = data?.filter(w => w.status === 'approved').length || 0;
-      const rejected = data?.filter(w => w.status === 'rejected').length || 0;
-      const totalAmount = data?.reduce((sum, w) => sum + (w.amount || 0), 0) || 0;
-      const pendingAmount = data?.filter(w => w.status === 'pending').reduce((sum, w) => sum + (w.amount || 0), 0) || 0;
+      const total = withdrawalsWithUsers.length;
+      const pending = withdrawalsWithUsers.filter(w => w.status === 'pending').length;
+      const approved = withdrawalsWithUsers.filter(w => w.status === 'approved').length;
+      const rejected = withdrawalsWithUsers.filter(w => w.status === 'rejected').length;
+      const totalAmount = withdrawalsWithUsers.reduce((sum, w) => sum + (w.amount || 0), 0);
+      const pendingAmount = withdrawalsWithUsers.filter(w => w.status === 'pending').reduce((sum, w) => sum + (w.amount || 0), 0);
       
       setStats({ total, pending, approved, rejected, totalAmount, pendingAmount });
     } catch (error) {
@@ -122,36 +143,26 @@ export default function AdminWithdrawals() {
         if (!confirmRejection) return;
       }
 
-      const { error } = await supabase
-        .from('withdrawal_requests')
-        .update({ 
-          status: newStatus, 
-          processed_at: new Date().toISOString(),
-          admin_notes: newStatus === 'rejected' ? rejectionReason || 'No reason provided' : null
-        })
-        .eq('id', withdrawalId);
-
-      if (error) throw error;
+      // Update withdrawal status in Firebase
+      await updateDoc(doc(db, 'withdrawal_requests', withdrawalId), {
+        status: newStatus,
+        processed_at: new Date().toISOString(),
+        admin_notes: newStatus === 'rejected' ? rejectionReason || 'No reason provided' : null,
+        updated_at: serverTimestamp()
+      });
 
       if (newStatus === 'approved') {
-        // If approved, deduct from user balance
-        const { error: balanceError } = await supabase
-          .from('users')
-          .update({ 
-            balance: (withdrawal.user?.balance || 0) - withdrawal.amount 
-          })
-          .eq('telegram_id', withdrawal.user_id);
-
-        if (balanceError) throw balanceError;
+        // Balance already deducted when user submitted withdrawal
+        // No need to deduct again - just approve the withdrawal
         
-        console.log(`Withdrawal approved: ${withdrawal.amount} deducted from user ${withdrawal.user_id}`);
+        console.log(`Withdrawal approved: ${withdrawal.amount} already deducted from user ${withdrawal.user_id}`);
         
         // Send notification to user
         await sendUserNotification(
           withdrawal.user_id.toString(),
           'success',
           'Withdrawal Approved! 💰',
-          `Your withdrawal of ${formatCurrency(withdrawal.amount)} has been approved and processed successfully.`
+          `Your withdrawal of ${withdrawal.amount} has been approved and processed successfully.`
         );
         
       } else if (newStatus === 'rejected') {
@@ -169,24 +180,30 @@ export default function AdminWithdrawals() {
           
         } else {
           // Standard rejection - WITH refund
-          const { error: balanceError } = await supabase
-            .from('users')
-            .update({ 
-              balance: (withdrawal.user?.balance || 0) + withdrawal.amount 
-            })
-            .eq('telegram_id', withdrawal.user_id);
-
-          if (balanceError) throw balanceError;
+          const usersRef = collection(db, 'users');
+          const userQuery = query(usersRef, where('telegram_id', '==', withdrawal.user_id), limit(1));
+          const userSnapshot = await getDocs(userQuery);
           
-          console.log(`Withdrawal rejected (standard): ${withdrawal.amount} refunded to user ${withdrawal.user_id}`);
-          
-          // Send notification to user
-          await sendUserNotification(
-            withdrawal.user_id.toString(),
-            'warning',
-            'Withdrawal Rejected & Refunded ⚠️',
-            `Your withdrawal of ${formatCurrency(withdrawal.amount)} was rejected but the amount has been refunded to your balance.`
-          );
+          if (!userSnapshot.empty) {
+            const userDoc = userSnapshot.docs[0];
+            const currentBalance = userDoc.data().balance || 0;
+            const newBalance = currentBalance + withdrawal.amount;
+            
+            await updateDoc(userDoc.ref, {
+              balance: newBalance,
+              updated_at: serverTimestamp()
+            });
+            
+            console.log(`Withdrawal rejected (standard): ${withdrawal.amount} refunded to user ${withdrawal.user_id}`);
+            
+            // Send notification to user
+            await sendUserNotification(
+              withdrawal.user_id.toString(),
+              'warning',
+              'Withdrawal Rejected & Refunded ⚠️',
+              `Your withdrawal of ${withdrawal.amount} was rejected but the amount has been refunded to your balance.`
+            );
+          }
         }
       }
       
@@ -198,7 +215,7 @@ export default function AdminWithdrawals() {
       let message = '';
       
       if (newStatus === 'approved') {
-        message = `Withdrawal approved. Amount deducted from user balance.`;
+        message = `Withdrawal approved. Amount was already deducted when user submitted.`;
       } else if (newStatus === 'rejected') {
         if (isValidRejection) {
           message = `Withdrawal rejected (valid reason). No refund given.`;
